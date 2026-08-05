@@ -53,6 +53,8 @@ pub(super) enum MouseAction {
         ratio: f32,
     },
     RenameModal(ModalAction),
+    /// Some(option) applies a picker option (last = Default/clear), None cancels.
+    WorkspaceColorModal(Option<usize>),
     ConfirmCloseAccept,
     ContextMenu {
         menu: ContextMenuState,
@@ -405,6 +407,13 @@ impl AppState {
                         })
                         .unwrap_or(ModalAction::Cancel);
                     return Some(MouseAction::RenameModal(action));
+                }
+
+                if self.mode == Mode::WorkspaceColor {
+                    let action = self.workspace_color_modal_inner().and_then(|inner| {
+                        crate::ui::workspace_color_hit(inner, mouse.column, mouse.row)
+                    });
+                    return Some(MouseAction::WorkspaceColorModal(action));
                 }
 
                 if self.mode == Mode::ContextMenu {
@@ -2757,7 +2766,7 @@ mod tests {
             kind: ContextMenuKind::Workspace { ws_idx: 1 },
             x: 2,
             y: 2,
-            list: MenuListState::new(1),
+            list: MenuListState::new(2),
         });
         app.state.mode = Mode::ContextMenu;
         handle_context_menu_key(
@@ -2805,7 +2814,7 @@ mod tests {
         app.handle_mouse(mouse(
             MouseEventKind::Down(MouseButton::Left),
             menu.x + 2,
-            menu.y + 2,
+            menu.y + 3,
         ));
 
         assert_eq!(app.state.workspaces.len(), 1);

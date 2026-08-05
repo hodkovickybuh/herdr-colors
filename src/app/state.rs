@@ -182,6 +182,34 @@ impl Palette {
         }
     }
 
+    /// Workspace accent swatches offered by the color picker, as (key, color) pairs.
+    /// Theme-backed entries follow the active palette; the rest are fixed Catppuccin
+    /// Mocha accents (readable on dark and light surfaces alike).
+    pub(crate) fn workspace_swatches(&self) -> [(&'static str, Color); 12] {
+        [
+            ("red", self.red),
+            ("maroon", Color::Rgb(0xeb, 0xa0, 0xac)),
+            ("peach", self.peach),
+            ("yellow", self.yellow),
+            ("green", self.green),
+            ("teal", self.teal),
+            ("sky", Color::Rgb(0x89, 0xdc, 0xeb)),
+            ("blue", self.blue),
+            ("sapphire", Color::Rgb(0x74, 0xc7, 0xec)),
+            ("mauve", self.mauve),
+            ("pink", Color::Rgb(0xf5, 0xc2, 0xe7)),
+            ("lavender", Color::Rgb(0xb4, 0xbe, 0xfe)),
+        ]
+    }
+
+    /// Resolve a stored workspace color swatch key. Unknown keys yield None so
+    /// callers fall back to the default styling.
+    pub(crate) fn workspace_color(&self, key: &str) -> Option<Color> {
+        self.workspace_swatches()
+            .into_iter()
+            .find_map(|(k, color)| (k == key).then_some(color))
+    }
+
     /// Terminal 16-color theme.
     pub fn terminal() -> Self {
         Self {
@@ -807,6 +835,7 @@ pub enum Mode {
     Resize,
     ConfirmClose,
     ContextMenu,
+    WorkspaceColor,
     Settings,
     GlobalMenu,
     KeybindHelp,
@@ -834,6 +863,7 @@ impl Mode {
                 | Mode::ConfirmClose
                 | Mode::ConfirmRemoveWorktree
                 | Mode::ContextMenu
+                | Mode::WorkspaceColor
                 | Mode::GlobalMenu
                 | Mode::KeybindHelp
         )
@@ -1228,16 +1258,22 @@ pub struct ContextMenuState {
 impl ContextMenuState {
     pub fn items(&self) -> &'static [&'static str] {
         match self.kind {
-            ContextMenuKind::Workspace { .. } => &["Rename", "Close"],
+            ContextMenuKind::Workspace { .. } => &["Rename", "Color...", "Close"],
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: false,
                 has_worktree_children: false,
                 ..
-            } => &["Rename", "Close", "New worktree", "Open worktree..."],
+            } => &[
+                "Rename",
+                "Color...",
+                "Close",
+                "New worktree",
+                "Open worktree...",
+            ],
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: true,
                 ..
-            } => &["Rename", "Close", "Delete worktree checkout..."],
+            } => &["Rename", "Color...", "Close", "Delete worktree checkout..."],
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: false,
                 has_worktree_children: true,
@@ -1245,6 +1281,7 @@ impl ContextMenuState {
                 ..
             } => &[
                 "Rename",
+                "Color...",
                 "Close group",
                 "New worktree",
                 "Open worktree...",
@@ -1257,6 +1294,7 @@ impl ContextMenuState {
                 ..
             } => &[
                 "Rename",
+                "Color...",
                 "Close group",
                 "New worktree",
                 "Open worktree...",
@@ -1313,6 +1351,13 @@ impl ContextMenuState {
             ],
         }
     }
+}
+
+/// Workspace color picker dialog state (TUI-local).
+pub struct WorkspaceColorPickerState {
+    pub ws_idx: usize,
+    /// Highlighted option: 0..12 swatches, 12 = Default (clear).
+    pub selected: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1438,6 +1483,7 @@ pub struct AppState {
     pub requested_new_tab_name: Option<String>,
     pub pending_workspace_create_cwd: Option<std::path::PathBuf>,
     pub rename_pane_target: Option<PaneId>,
+    pub color_picker: Option<WorkspaceColorPickerState>,
     pub worktree_create: Option<WorktreeCreateState>,
     pub worktree_open: Option<WorktreeOpenState>,
     pub worktree_remove: Option<WorktreeRemoveState>,
@@ -1808,6 +1854,7 @@ impl AppState {
             requested_new_tab_name: None,
             pending_workspace_create_cwd: None,
             rename_pane_target: None,
+            color_picker: None,
             worktree_create: None,
             worktree_open: None,
             worktree_remove: None,
@@ -2457,6 +2504,18 @@ mod tests {
     }
 
     #[test]
+    fn workspace_context_menu_offers_color_picker() {
+        let menu = ContextMenuState {
+            kind: ContextMenuKind::Workspace { ws_idx: 0 },
+            x: 0,
+            y: 0,
+            list: MenuListState::new(0),
+        };
+
+        assert_eq!(menu.items(), &["Rename", "Color...", "Close"]);
+    }
+
+    #[test]
     fn linked_worktree_context_menu_keeps_safe_close_and_explicit_remove() {
         let menu = ContextMenuState {
             kind: ContextMenuKind::GitWorkspace {
@@ -2472,7 +2531,7 @@ mod tests {
 
         assert_eq!(
             menu.items(),
-            &["Rename", "Close", "Delete worktree checkout..."]
+            &["Rename", "Color...", "Close", "Delete worktree checkout..."]
         );
     }
 
@@ -2492,7 +2551,13 @@ mod tests {
 
         assert_eq!(
             menu.items(),
-            &["Rename", "Close", "New worktree", "Open worktree..."]
+            &[
+                "Rename",
+                "Color...",
+                "Close",
+                "New worktree",
+                "Open worktree..."
+            ]
         );
     }
 
@@ -2514,6 +2579,7 @@ mod tests {
             menu.items(),
             &[
                 "Rename",
+                "Color...",
                 "Close group",
                 "New worktree",
                 "Open worktree...",

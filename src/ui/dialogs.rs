@@ -17,6 +17,159 @@ use crate::terminal::TerminalRuntimeRegistry;
 const NEW_LINKED_WORKTREE_POPUP_WIDTH: u16 = 68;
 const NEW_LINKED_WORKTREE_POPUP_HEIGHT: u16 = 12;
 
+pub(crate) const WORKSPACE_COLOR_POPUP_WIDTH: u16 = 44;
+pub(crate) const WORKSPACE_COLOR_POPUP_HEIGHT: u16 = 12;
+const WORKSPACE_COLOR_GRID_COLS: usize = 3;
+
+/// Clickable regions of the workspace color picker, derived from its inner rect.
+pub(crate) struct WorkspaceColorLayout {
+    /// One rect per swatch, row-major.
+    pub swatches: Vec<Rect>,
+    /// The "Default" (clear color) row.
+    pub default: Rect,
+    pub cancel: Rect,
+}
+
+pub(crate) fn workspace_color_layout(inner: Rect) -> WorkspaceColorLayout {
+    let col_width = inner.width / WORKSPACE_COLOR_GRID_COLS as u16;
+    let swatches = (0..12)
+        .map(|i| {
+            let row = i / WORKSPACE_COLOR_GRID_COLS;
+            let col = i % WORKSPACE_COLOR_GRID_COLS;
+            Rect::new(
+                inner.x + col as u16 * col_width,
+                inner.y + 2 + row as u16,
+                col_width,
+                1,
+            )
+        })
+        .collect();
+    let default = Rect::new(inner.x, inner.y + 7, inner.width, 1);
+    let cancel = action_button_row_rects(
+        inner,
+        &[ActionButtonSpec {
+            hint: Some("esc"),
+            label: "cancel",
+        }],
+        2,
+        9,
+    )[0];
+    WorkspaceColorLayout {
+        swatches,
+        default,
+        cancel,
+    }
+}
+
+fn rect_contains(rect: Rect, col: u16, row: u16) -> bool {
+    col >= rect.x && col < rect.x + rect.width && row >= rect.y && row < rect.y + rect.height
+}
+
+/// Hit-test a click against the picker. Some(i) applies option i (the last
+/// option is Default/clear), None cancels. Mirrors the rename modal: any
+/// click not on a swatch or the Default row dismisses the dialog.
+pub(crate) fn workspace_color_hit(inner: Rect, col: u16, row: u16) -> Option<usize> {
+    let layout = workspace_color_layout(inner);
+    for (i, rect) in layout.swatches.iter().enumerate() {
+        if rect_contains(*rect, col, row) {
+            return Some(i);
+        }
+    }
+    if rect_contains(layout.default, col, row) {
+        return Some(layout.swatches.len());
+    }
+    None
+}
+
+pub(super) fn render_workspace_color_overlay(app: &AppState, frame: &mut Frame, area: Rect) {
+    super::dim_background(frame, area);
+
+    let p = &app.palette;
+    let Some(inner) = render_modal_shell(
+        frame,
+        area,
+        WORKSPACE_COLOR_POPUP_WIDTH,
+        WORKSPACE_COLOR_POPUP_HEIGHT,
+        p,
+    ) else {
+        return;
+    };
+    if inner.height < 10 || inner.width < 12 {
+        return;
+    }
+
+    render_modal_header(
+        frame,
+        Rect::new(inner.x, inner.y, inner.width, 1),
+        "workspace color",
+        p,
+    );
+
+    let layout = workspace_color_layout(inner);
+    let selected = app.color_picker.as_ref().map(|picker| picker.selected);
+    let current = app
+        .color_picker
+        .as_ref()
+        .and_then(|picker| app.workspaces.get(picker.ws_idx))
+        .and_then(|ws| ws.color.as_deref());
+
+    for (i, ((key, color), rect)) in p
+        .workspace_swatches()
+        .iter()
+        .zip(layout.swatches.iter())
+        .enumerate()
+    {
+        let highlighted = selected == Some(i);
+        let mut name_style = Style::default().fg(p.text);
+        if current == Some(*key) {
+            name_style = name_style.add_modifier(Modifier::BOLD);
+        }
+        if highlighted {
+            name_style = name_style.bg(p.surface0);
+            let buf = frame.buffer_mut();
+            for x in rect.x..rect.x + rect.width {
+                buf[(x, rect.y)].set_style(Style::default().bg(p.surface0));
+            }
+        }
+        let line = Line::from(vec![
+            Span::styled(" ██ ", Style::default().fg(*color)),
+            Span::styled(*key, name_style),
+        ]);
+        frame.render_widget(Paragraph::new(line), *rect);
+    }
+
+    let default_highlighted = selected == Some(layout.swatches.len());
+    let default_style = if default_highlighted {
+        let buf = frame.buffer_mut();
+        for x in layout.default.x..layout.default.x + layout.default.width {
+            buf[(x, layout.default.y)].set_style(Style::default().bg(p.surface0));
+        }
+        Style::default().fg(p.text).bg(p.surface0)
+    } else {
+        Style::default().fg(p.subtext0)
+    };
+    let default_label = if current.is_none() {
+        " default (current)"
+    } else {
+        " default (clear)"
+    };
+    frame.render_widget(
+        Paragraph::new(Span::styled(default_label, default_style)),
+        layout.default,
+    );
+
+    render_action_button(
+        frame,
+        layout.cancel,
+        Some("esc"),
+        "cancel",
+        Style::default()
+            .fg(p.text)
+            .bg(p.surface0)
+            .add_modifier(Modifier::BOLD),
+    );
+}
+
 pub(crate) fn rename_button_rects(inner: Rect) -> (Rect, Rect, Rect) {
     let rects = action_button_row_rects(
         inner,
