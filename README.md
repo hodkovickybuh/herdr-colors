@@ -1,3 +1,36 @@
+# herdr-colors
+
+A small fork of [herdr](https://github.com/herdrdev/herdr) (v0.7.5) that makes the
+workspace sidebar actually scannable:
+
+- **Right-click a workspace → Color...** — 12 vivid swatches, mouse or keyboard, persisted.
+- **Auto color by project** — workspaces with no manual pick get a deterministic color
+  from their directory. Same project, same color, zero setup.
+- **Red name = needs you** — an agent blocked on input (permission prompt, question)
+  turns the workspace name bright red until you answer.
+- **Teal name = finished, unread** — clears itself when you open the workspace.
+- Colors work in the collapsed (narrow) sidebar too.
+
+## Install (macOS / Linux)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/hodkovickybuh/herdr-colors/main/install.sh | sh
+```
+
+Or grab a binary + `.sha256` from
+[Releases](https://github.com/hodkovickybuh/herdr-colors/releases/latest) manually.
+
+Notes:
+
+- If you have the Homebrew herdr installed, `brew uninstall herdr` first (or the tap binary may win over this one depending on PATH).
+- **Do not run `herdr update`** — that pulls upstream herdr and replaces this fork. Updates to the fork ship through this repo's releases.
+- Your sessions, workspaces, and colors survive restarts; colors are stored in herdr's normal session snapshot.
+
+Everything below is the upstream README. Credit and license (Apache-2.0): the
+[herdr authors](https://github.com/herdrdev/herdr).
+
+---
+
 # herdr
 
 
