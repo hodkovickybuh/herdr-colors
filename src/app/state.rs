@@ -181,24 +181,30 @@ impl Palette {
             peach: Color::Rgb(254, 100, 11),
         }
     }
+}
 
+/// Vivid red used when a workspace's agent is blocked on human input.
+/// Deliberately brighter than the palette red so it reads at a glance.
+pub(crate) const ATTENTION_RED: Color = Color::Rgb(0xff, 0x5f, 0x6d);
+
+impl Palette {
     /// Workspace accent swatches offered by the color picker, as (key, color) pairs.
-    /// Theme-backed entries follow the active palette; the rest are fixed Catppuccin
-    /// Mocha accents (readable on dark and light surfaces alike).
+    /// Fixed vivid RGBs (not theme-backed): bright enough to read on the sidebar's
+    /// dark surface at a glance.
     pub(crate) fn workspace_swatches(&self) -> [(&'static str, Color); 12] {
         [
-            ("red", self.red),
-            ("maroon", Color::Rgb(0xeb, 0xa0, 0xac)),
-            ("peach", self.peach),
-            ("yellow", self.yellow),
-            ("green", self.green),
-            ("teal", self.teal),
-            ("sky", Color::Rgb(0x89, 0xdc, 0xeb)),
-            ("blue", self.blue),
-            ("sapphire", Color::Rgb(0x74, 0xc7, 0xec)),
-            ("mauve", self.mauve),
-            ("pink", Color::Rgb(0xf5, 0xc2, 0xe7)),
-            ("lavender", Color::Rgb(0xb4, 0xbe, 0xfe)),
+            ("red", ATTENTION_RED),
+            ("maroon", Color::Rgb(0xff, 0x8f, 0xa3)),
+            ("peach", Color::Rgb(0xff, 0xa0, 0x57)),
+            ("yellow", Color::Rgb(0xff, 0xe0, 0x66)),
+            ("green", Color::Rgb(0x69, 0xf0, 0xa0)),
+            ("teal", Color::Rgb(0x4d, 0xe3, 0xd1)),
+            ("sky", Color::Rgb(0x66, 0xe0, 0xff)),
+            ("blue", Color::Rgb(0x7c, 0x9a, 0xff)),
+            ("sapphire", Color::Rgb(0x4f, 0xb8, 0xff)),
+            ("mauve", Color::Rgb(0xc7, 0x9b, 0xff)),
+            ("pink", Color::Rgb(0xff, 0x9e, 0xf0)),
+            ("lavender", Color::Rgb(0xb9, 0xc0, 0xff)),
         ]
     }
 

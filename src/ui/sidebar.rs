@@ -1174,12 +1174,7 @@ fn render_workspace_list(
             }
         }
 
-        let name_style = if selected || is_active || is_dragged {
-            Style::default().fg(p.text).add_modifier(Modifier::BOLD)
-        } else {
-            let custom = ws.color.as_deref().and_then(|key| p.workspace_color(key));
-            Style::default().fg(custom.unwrap_or(p.subtext0))
-        };
+        let custom_color = ws.color.as_deref().and_then(|key| p.workspace_color(key));
 
         let label = ws.display_name_from(&app.terminals, terminal_runtimes);
         let display_label = if card.indented {
@@ -1195,6 +1190,25 @@ fn render_workspace_list(
             .filter(|(_, collapsed)| *collapsed)
             .map(|(key, _)| space_aggregate_state(app, key))
             .unwrap_or((agg_state, agg_seen));
+        // Blocked (agent needs human input) always wins, even over a custom
+        // color and even on the active row: that signal must never hide.
+        let name_style = if display_state == AgentState::Blocked {
+            Style::default()
+                .fg(crate::app::state::ATTENTION_RED)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            let fg = custom_color.unwrap_or(if highlighted {
+                p.text
+            } else {
+                p.subtext0
+            });
+            let style = Style::default().fg(fg);
+            if highlighted || custom_color.is_some() {
+                style.add_modifier(Modifier::BOLD)
+            } else {
+                style
+            }
+        };
         let state_icon = state_dot(display_state, display_seen, p);
         let state_text_style = Style::default()
             .fg(state_label_color(display_state, display_seen, p))
@@ -1613,7 +1627,7 @@ rows = [[{ token = "workspace", bold = false }, { token = "agent", dim = false }
     }
 
     #[test]
-    fn workspace_color_tints_inactive_name_only() {
+    fn workspace_color_tints_name_even_when_active() {
         let mut app = crate::app::state::AppState::test_new();
         app.workspaces = vec![Workspace::test_new("one"), Workspace::test_new("two")];
         app.workspaces[1].set_color(Some("mauve".to_string()));
@@ -1629,14 +1643,16 @@ rows = [[{ token = "workspace", bold = false }, { token = "agent", dim = false }
             .unwrap();
         let buffer = terminal.backend().buffer();
 
-        // Inactive workspace with a swatch key renders its name in that color.
+        // Inactive workspace with a swatch key renders its name in that vivid color, bold.
         let tinted = buffer[(find_symbol_x(buffer, second_row, 25, "t"), second_row)].style();
-        assert_eq!(tinted.fg, Some(app.palette.mauve));
-        assert!(!tinted
-            .add_modifier
-            .intersects(Modifier::BOLD | Modifier::DIM));
+        assert_eq!(
+            tinted.fg,
+            Some(ratatui::style::Color::Rgb(0xc7, 0x9b, 0xff))
+        );
+        assert!(tinted.add_modifier.contains(Modifier::BOLD));
+        assert!(!tinted.add_modifier.contains(Modifier::DIM));
 
-        // The active workspace keeps the selection/active styling, not the tint.
+        // The active workspace keeps its custom color too (bold), not the default text color.
         app.workspaces[0].set_color(Some("green".to_string()));
         let mut terminal = Terminal::new(TestBackend::new(26, 20)).unwrap();
         terminal
@@ -1644,7 +1660,10 @@ rows = [[{ token = "workspace", bold = false }, { token = "agent", dim = false }
             .unwrap();
         let buffer = terminal.backend().buffer();
         let active = buffer[(find_symbol_x(buffer, first_row, 25, "o"), first_row)].style();
-        assert_eq!(active.fg, Some(app.palette.text));
+        assert_eq!(
+            active.fg,
+            Some(ratatui::style::Color::Rgb(0x69, 0xf0, 0xa0))
+        );
         assert!(active.add_modifier.contains(Modifier::BOLD));
 
         // Unknown swatch keys fall back to the default name color.
@@ -1656,6 +1675,35 @@ rows = [[{ token = "workspace", bold = false }, { token = "agent", dim = false }
         let buffer = terminal.backend().buffer();
         let fallback = buffer[(find_symbol_x(buffer, second_row, 25, "t"), second_row)].style();
         assert_eq!(fallback.fg, Some(app.palette.subtext0));
+        assert!(!fallback.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn blocked_state_overrides_custom_name_color() {
+        let mut app = crate::app::state::AppState::test_new();
+        let ws = Workspace::test_new("one");
+        let root = ws.tabs[0].root_pane;
+        let terminal_id = ws.terminal_id(root).unwrap().clone();
+        let mut terminal_state = crate::terminal::TerminalState::new(terminal_id, "/tmp".into());
+        terminal_state.state = AgentState::Blocked;
+        app.terminals.insert(terminal_state.id.clone(), terminal_state);
+        app.workspaces = vec![ws];
+        app.workspaces[0].set_color(Some("green".to_string()));
+        app.active = Some(0);
+        app.mode = Mode::Terminal;
+        let area = Rect::new(0, 0, 26, 20);
+        app.view.workspace_card_areas = compute_workspace_card_areas(&app, area);
+        let first_row = app.view.workspace_card_areas[0].rect.y;
+        let mut terminal = Terminal::new(TestBackend::new(26, 20)).unwrap();
+        terminal
+            .draw(|frame| render_sidebar(&app, &TerminalRuntimeRegistry::new(), frame, area))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+
+        // Blocked wins over both the custom color and the active styling.
+        let name = buffer[(find_symbol_x(buffer, first_row, 25, "o"), first_row)].style();
+        assert_eq!(name.fg, Some(crate::app::state::ATTENTION_RED));
+        assert!(name.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
