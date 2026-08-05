@@ -815,7 +815,7 @@ pub(super) fn render_sidebar_collapsed(app: &AppState, frame: &mut Frame, area: 
         let divider_color = if app.agent_view_override.is_some() {
             p.accent
         } else {
-            p.surface_dim
+            p.overlay0
         };
         for x in ws_area.x..ws_area.x + ws_area.width {
             buf[(x, divider_y)].set_symbol("─");
@@ -1161,7 +1161,7 @@ fn render_workspace_list(
             } else if is_dragged {
                 p.surface1
             } else {
-                p.surface_dim
+                p.surface0
             };
             let buf = frame.buffer_mut();
             for y in row_y..row_y + row_height {
@@ -1177,7 +1177,8 @@ fn render_workspace_list(
         let name_style = if selected || is_active || is_dragged {
             Style::default().fg(p.text).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(p.subtext0)
+            let custom = ws.color.as_deref().and_then(|key| p.workspace_color(key));
+            Style::default().fg(custom.unwrap_or(p.subtext0))
         };
 
         let label = ws.display_name_from(&app.terminals, terminal_runtimes);
@@ -1321,7 +1322,7 @@ fn render_agent_detail(
 
     let sep_line = "─".repeat(area.width as usize);
     frame.render_widget(
-        Paragraph::new(Span::styled(&sep_line, Style::default().fg(p.surface_dim))),
+        Paragraph::new(Span::styled(&sep_line, Style::default().fg(p.overlay0))),
         Rect::new(area.x, area.y, area.width, 1),
     );
 
@@ -1601,7 +1602,7 @@ rows = [[{ token = "workspace", bold = false }, { token = "agent", dim = false }
         assert_eq!(active.fg, Some(app.palette.text));
         assert!(active.add_modifier.contains(Modifier::BOLD));
         assert!(!active.add_modifier.contains(Modifier::DIM));
-        assert_eq!(active.bg, Some(app.palette.surface_dim));
+        assert_eq!(active.bg, Some(app.palette.surface0));
 
         let inactive = buffer[(find_symbol_x(buffer, second_row, 25, "t"), second_row)].style();
         assert_eq!(inactive.fg, Some(app.palette.subtext0));
@@ -1609,6 +1610,52 @@ rows = [[{ token = "workspace", bold = false }, { token = "agent", dim = false }
             .add_modifier
             .intersects(Modifier::BOLD | Modifier::DIM));
         assert_eq!(inactive.bg, Some(ratatui::style::Color::Reset));
+    }
+
+    #[test]
+    fn workspace_color_tints_inactive_name_only() {
+        let mut app = crate::app::state::AppState::test_new();
+        app.workspaces = vec![Workspace::test_new("one"), Workspace::test_new("two")];
+        app.workspaces[1].set_color(Some("mauve".to_string()));
+        app.active = Some(0);
+        app.mode = Mode::Terminal;
+        let area = Rect::new(0, 0, 26, 20);
+        app.view.workspace_card_areas = compute_workspace_card_areas(&app, area);
+        let first_row = app.view.workspace_card_areas[0].rect.y;
+        let second_row = app.view.workspace_card_areas[1].rect.y;
+        let mut terminal = Terminal::new(TestBackend::new(26, 20)).unwrap();
+        terminal
+            .draw(|frame| render_sidebar(&app, &TerminalRuntimeRegistry::new(), frame, area))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+
+        // Inactive workspace with a swatch key renders its name in that color.
+        let tinted = buffer[(find_symbol_x(buffer, second_row, 25, "t"), second_row)].style();
+        assert_eq!(tinted.fg, Some(app.palette.mauve));
+        assert!(!tinted
+            .add_modifier
+            .intersects(Modifier::BOLD | Modifier::DIM));
+
+        // The active workspace keeps the selection/active styling, not the tint.
+        app.workspaces[0].set_color(Some("green".to_string()));
+        let mut terminal = Terminal::new(TestBackend::new(26, 20)).unwrap();
+        terminal
+            .draw(|frame| render_sidebar(&app, &TerminalRuntimeRegistry::new(), frame, area))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let active = buffer[(find_symbol_x(buffer, first_row, 25, "o"), first_row)].style();
+        assert_eq!(active.fg, Some(app.palette.text));
+        assert!(active.add_modifier.contains(Modifier::BOLD));
+
+        // Unknown swatch keys fall back to the default name color.
+        app.workspaces[1].set_color(Some("not-a-swatch".to_string()));
+        let mut terminal = Terminal::new(TestBackend::new(26, 20)).unwrap();
+        terminal
+            .draw(|frame| render_sidebar(&app, &TerminalRuntimeRegistry::new(), frame, area))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let fallback = buffer[(find_symbol_x(buffer, second_row, 25, "t"), second_row)].style();
+        assert_eq!(fallback.fg, Some(app.palette.subtext0));
     }
 
     #[test]
@@ -1647,12 +1694,12 @@ rows = [[{ token = "$hype", fg = "#abcdef", bold = true, dim = false }, "workspa
             assert_eq!(style.fg, Some(ratatui::style::Color::Rgb(0xab, 0xcd, 0xef)));
             assert!(style.add_modifier.contains(Modifier::BOLD));
             assert!(!style.add_modifier.contains(Modifier::DIM));
-            assert_eq!(style.bg, Some(app.palette.surface_dim));
+            assert_eq!(style.bg, Some(app.palette.surface0));
         }
         assert_eq!(separator.fg, Some(app.palette.overlay0));
         assert!(separator.add_modifier.contains(Modifier::DIM));
         assert!(!separator.add_modifier.contains(Modifier::BOLD));
-        assert_eq!(separator.bg, Some(app.palette.surface_dim));
+        assert_eq!(separator.bg, Some(app.palette.surface0));
     }
 
     #[test]

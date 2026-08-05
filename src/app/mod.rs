@@ -537,6 +537,7 @@ impl App {
             requested_new_tab_name: None,
             pending_workspace_create_cwd: None,
             rename_pane_target: None,
+            color_picker: None,
             worktree_create: None,
             worktree_open: None,
             worktree_remove: None,
@@ -1698,6 +1699,9 @@ impl App {
             Mode::ContextMenu => {
                 self.handle_context_menu_key_via_api(key_event);
             }
+            Mode::WorkspaceColor => {
+                input::handle_workspace_color_key(&mut self.state, key_event);
+            }
             Mode::KeybindHelp => {
                 input::handle_keybind_help_key(&mut self.state, key_event);
             }
@@ -1891,6 +1895,7 @@ mod tests {
             Mode::ConfirmClose,
             Mode::ConfirmRemoveWorktree,
             Mode::ContextMenu,
+            Mode::WorkspaceColor,
             Mode::GlobalMenu,
             Mode::KeybindHelp,
         ] {
@@ -5071,7 +5076,7 @@ last_pane = "prefix+tab"
             kind: state::ContextMenuKind::Workspace { ws_idx: 1 },
             x: 2,
             y: 2,
-            list: state::MenuListState::new(1),
+            list: state::MenuListState::new(2),
         });
         app.state.mode = Mode::ContextMenu;
 

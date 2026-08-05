@@ -739,6 +739,12 @@ pub(super) fn apply_context_menu_action(
         }
         (
             ContextMenuKind::Workspace { ws_idx } | ContextMenuKind::GitWorkspace { ws_idx, .. },
+            Some("Color..."),
+        ) => {
+            open_workspace_color_picker(state, ws_idx);
+        }
+        (
+            ContextMenuKind::Workspace { ws_idx } | ContextMenuKind::GitWorkspace { ws_idx, .. },
             Some("Close" | "Close group"),
         ) => {
             state.selected = ws_idx;
@@ -1169,6 +1175,11 @@ impl App {
             (
                 ContextMenuKind::Workspace { ws_idx }
                 | ContextMenuKind::GitWorkspace { ws_idx, .. },
+                Some("Color..."),
+            ) => open_workspace_color_picker(&mut self.state, ws_idx),
+            (
+                ContextMenuKind::Workspace { ws_idx }
+                | ContextMenuKind::GitWorkspace { ws_idx, .. },
                 Some("Close" | "Close group"),
             ) => {
                 self.state.selected = ws_idx;
@@ -1303,6 +1314,78 @@ fn cancel_rename_modal(state: &mut AppState) {
     leave_modal(state);
 }
 
+// ---------------------------------------------------------------------------
+// Workspace color picker (TUI-local; persists via the session snapshot)
+// ---------------------------------------------------------------------------
+
+/// Number of options in the picker: one per swatch plus the trailing Default row.
+pub(crate) fn workspace_color_option_count(state: &AppState) -> usize {
+    state.palette.workspace_swatches().len() + 1
+}
+
+pub(crate) fn open_workspace_color_picker(state: &mut AppState, ws_idx: usize) {
+    let current = state.workspaces.get(ws_idx).and_then(|ws| ws.color.clone());
+    let selected = current
+        .and_then(|key| {
+            state
+                .palette
+                .workspace_swatches()
+                .iter()
+                .position(|(k, _)| *k == key)
+        })
+        .unwrap_or_else(|| workspace_color_option_count(state) - 1);
+    state.color_picker = Some(crate::app::state::WorkspaceColorPickerState { ws_idx, selected });
+    state.mode = Mode::WorkspaceColor;
+}
+
+/// Apply a picker option to the target workspace and close the dialog.
+/// Option indices below the swatch count set that swatch; the last option clears.
+pub(crate) fn apply_workspace_color_option(state: &mut AppState, option: usize) {
+    let Some(picker) = state.color_picker.take() else {
+        leave_modal(state);
+        return;
+    };
+    let swatches = state.palette.workspace_swatches();
+    if option < swatches.len() + 1 {
+        let color = swatches.get(option).map(|(key, _)| (*key).to_string());
+        if let Some(ws) = state.workspaces.get_mut(picker.ws_idx) {
+            ws.set_color(color);
+            state.mark_session_dirty();
+        }
+    }
+    leave_modal(state);
+}
+
+pub(crate) fn cancel_workspace_color_picker(state: &mut AppState) {
+    state.color_picker = None;
+    leave_modal(state);
+}
+
+pub(crate) fn handle_workspace_color_key(state: &mut AppState, key: KeyEvent) {
+    let count = workspace_color_option_count(state);
+    match key.code {
+        KeyCode::Esc => cancel_workspace_color_picker(state),
+        KeyCode::Enter => {
+            if let Some(selected) = state.color_picker.as_ref().map(|picker| picker.selected) {
+                apply_workspace_color_option(state, selected);
+            } else {
+                leave_modal(state);
+            }
+        }
+        KeyCode::Left | KeyCode::Char('k') => {
+            if let Some(picker) = state.color_picker.as_mut() {
+                picker.selected = (picker.selected + count - 1) % count;
+            }
+        }
+        KeyCode::Right | KeyCode::Char('j') => {
+            if let Some(picker) = state.color_picker.as_mut() {
+                picker.selected = (picker.selected + 1) % count;
+            }
+        }
+        _ => {}
+    }
+}
+
 impl AppState {
     pub(super) fn global_menu_item_at(&self, col: u16, row: u16) -> Option<GlobalMenuAction> {
         let rect = self.global_menu_rect();
@@ -1341,6 +1424,105 @@ mod tests {
                 .as_nanos()
         );
         std::env::temp_dir().join(unique).join("config.toml")
+    }
+
+    #[test]
+    fn context_menu_color_opens_picker_on_current_swatch() {
+        let mut state = state_with_workspaces(&["one", "two"]);
+        state.workspaces[1].set_color(Some("teal".to_string()));
+        let menu = ContextMenuState {
+            kind: ContextMenuKind::Workspace { ws_idx: 1 },
+            x: 0,
+            y: 0,
+            list: MenuListState::new(1),
+        };
+
+        apply_context_menu_action(
+            &mut state,
+            &mut crate::terminal::TerminalRuntimeRegistry::new(),
+            menu,
+            1,
+        );
+
+        assert_eq!(state.mode, Mode::WorkspaceColor);
+        let picker = state.color_picker.as_ref().expect("picker open");
+        assert_eq!(picker.ws_idx, 1);
+        let swatches = state.palette.workspace_swatches();
+        let teal_idx = swatches.iter().position(|(k, _)| *k == "teal").unwrap();
+        assert_eq!(picker.selected, teal_idx);
+    }
+
+    #[test]
+    fn workspace_color_apply_sets_color_and_marks_dirty() {
+        let mut state = state_with_workspaces(&["one"]);
+        open_workspace_color_picker(&mut state, 0);
+        assert!(!state.session_dirty);
+
+        apply_workspace_color_option(&mut state, 0); // first swatch = "red"
+
+        assert_eq!(state.workspaces[0].color.as_deref(), Some("red"));
+        assert!(state.session_dirty);
+        assert!(state.color_picker.is_none());
+        assert_ne!(state.mode, Mode::WorkspaceColor);
+    }
+
+    #[test]
+    fn workspace_color_default_option_clears_color_and_marks_dirty() {
+        let mut state = state_with_workspaces(&["one"]);
+        state.workspaces[0].set_color(Some("mauve".to_string()));
+        state.session_dirty = false;
+        open_workspace_color_picker(&mut state, 0);
+
+        let default_option = state.palette.workspace_swatches().len();
+        apply_workspace_color_option(&mut state, default_option);
+
+        assert_eq!(state.workspaces[0].color, None);
+        assert!(state.session_dirty);
+        assert!(state.color_picker.is_none());
+    }
+
+    #[test]
+    fn workspace_color_key_nav_and_esc() {
+        let mut state = state_with_workspaces(&["one"]);
+        open_workspace_color_picker(&mut state, 0);
+        let count = workspace_color_option_count(&state);
+        // no color set: starts on Default (last option)
+        assert_eq!(state.color_picker.as_ref().unwrap().selected, count - 1);
+
+        let right = KeyEvent::new(KeyCode::Right, KeyModifiers::empty());
+        handle_workspace_color_key(&mut state, right);
+        assert_eq!(state.color_picker.as_ref().unwrap().selected, 0); // wraps
+
+        let j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::empty());
+        handle_workspace_color_key(&mut state, j);
+        assert_eq!(state.color_picker.as_ref().unwrap().selected, 1);
+
+        let k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::empty());
+        handle_workspace_color_key(&mut state, k);
+        assert_eq!(state.color_picker.as_ref().unwrap().selected, 0);
+
+        let left = KeyEvent::new(KeyCode::Left, KeyModifiers::empty());
+        handle_workspace_color_key(&mut state, left);
+        assert_eq!(state.color_picker.as_ref().unwrap().selected, count - 1); // wraps back
+
+        // Enter applies the highlighted option.
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        handle_workspace_color_key(&mut state, enter);
+        assert_eq!(state.workspaces[0].color, None); // Default applied
+        assert!(state.session_dirty);
+
+        // Esc cancels without touching the color.
+        state.workspaces[0].set_color(Some("blue".to_string()));
+        state.session_dirty = false;
+        open_workspace_color_picker(&mut state, 0);
+        handle_workspace_color_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()),
+        );
+        assert_eq!(state.workspaces[0].color.as_deref(), Some("blue"));
+        assert!(!state.session_dirty);
+        assert!(state.color_picker.is_none());
+        assert_ne!(state.mode, Mode::WorkspaceColor);
     }
 
     fn app_with_test_workspaces(names: &[&str]) -> App {
@@ -1968,7 +2150,7 @@ mod tests {
         };
         let mut terminal_runtimes = crate::terminal::TerminalRuntimeRegistry::new();
 
-        apply_context_menu_action(&mut state, &mut terminal_runtimes, menu, 1);
+        apply_context_menu_action(&mut state, &mut terminal_runtimes, menu, 2);
 
         assert_eq!(state.selected, 0);
         assert_eq!(state.mode, Mode::ConfirmClose);

@@ -52,6 +52,8 @@ pub struct WorkspaceSnapshot {
     pub id: Option<String>,
     #[serde(default)]
     pub custom_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     pub identity_cwd: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_space: Option<crate::workspace::WorktreeSpaceMembership>,
@@ -156,6 +158,7 @@ impl From<LegacyWorkspaceSnapshot> for WorkspaceSnapshot {
         Self {
             id: None,
             custom_name: snap.custom_name,
+            color: None,
             identity_cwd,
             worktree_space: None,
             public_pane_numbers: HashMap::new(),
@@ -287,6 +290,7 @@ fn capture_workspace(
     WorkspaceSnapshot {
         id: Some(ws.id.clone()),
         custom_name: ws.custom_name.clone(),
+        color: ws.color.clone(),
         identity_cwd: ws
             .resolved_identity_cwd_from(terminals, terminal_runtimes)
             .unwrap_or_else(|| ws.identity_cwd.clone()),
@@ -615,6 +619,46 @@ mod tests {
     }
 
     #[test]
+    fn workspace_color_round_trips_through_snapshot() {
+        let mut state = state_with_workspaces(&["colored", "plain"]);
+        state.workspaces[0].set_color(Some("mauve".to_string()));
+
+        let snap = capture_from_state(&state);
+        assert_eq!(snap.workspaces[0].color.as_deref(), Some("mauve"));
+        assert_eq!(snap.workspaces[1].color, None);
+
+        let json = serde_json::to_string(&snap).unwrap();
+        assert!(json.contains("\"color\":\"mauve\""));
+        // unset colors stay out of the JSON entirely
+        assert_eq!(json.matches("\"color\"").count(), 1);
+
+        let restored = parse_snapshot(&json).unwrap();
+        assert_eq!(restored.workspaces[0].color.as_deref(), Some("mauve"));
+        assert_eq!(restored.workspaces[1].color, None);
+    }
+
+    #[test]
+    fn old_snapshot_without_color_field_deserializes() {
+        // Fixtures predate the color field; they must still load with color = None.
+        let snap = parse_snapshot(session_fixture("current-herdr")).unwrap();
+        assert!(!snap.workspaces.is_empty());
+        assert!(snap.workspaces.iter().all(|ws| ws.color.is_none()));
+
+        // Old binaries ignore the new key when reading newer snapshots.
+        let json = r#"{
+            "version": 3,
+            "workspaces": [{
+                "identity_cwd": "/tmp",
+                "color": "teal",
+                "tabs": []
+            }],
+            "selected": 0
+        }"#;
+        let snap = parse_snapshot(json).unwrap();
+        assert_eq!(snap.workspaces[0].color.as_deref(), Some("teal"));
+    }
+
+    #[test]
     fn round_trip_layout_snapshot() {
         let layout = LayoutSnapshot::Split {
             direction: DirectionSnapshot::Horizontal,
@@ -666,6 +710,7 @@ mod tests {
             workspaces: vec![WorkspaceSnapshot {
                 id: Some("wproj".to_string()),
                 custom_name: Some("pi-mono".to_string()),
+                color: None,
                 identity_cwd: PathBuf::from("/home/can/Projects/herdr"),
                 worktree_space: None,
                 public_pane_numbers: HashMap::from([(0, 1), (1, 2)]),
@@ -1222,6 +1267,7 @@ mod tests {
             workspaces: vec![WorkspaceSnapshot {
                 id: Some("test-ws".to_string()),
                 custom_name: Some("fallback test".to_string()),
+                color: None,
                 identity_cwd: PathBuf::from("/tmp"),
                 worktree_space: None,
                 public_pane_numbers: HashMap::new(),

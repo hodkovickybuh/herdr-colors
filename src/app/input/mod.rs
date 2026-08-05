@@ -49,7 +49,8 @@ mod terminal;
 pub(crate) use self::{
     modal::{
         handle_global_menu_key, handle_keybind_help_key, handle_navigator_key,
-        insert_navigator_search_text, insert_rename_input_text, open_new_workspace_dialog,
+        handle_workspace_color_key, insert_navigator_search_text, insert_rename_input_text,
+        open_new_workspace_dialog,
     },
     navigate::{
         terminal_direct_indexed_navigation_action, terminal_direct_non_indexed_navigation_action,
@@ -105,6 +106,7 @@ impl App {
                 Mode::ContextMenu => {
                     self.handle_context_menu_key_via_api(key_event);
                 }
+                Mode::WorkspaceColor => handle_workspace_color_key(&mut self.state, key_event),
                 Mode::Settings => self.handle_settings_key(key_event),
                 Mode::GlobalMenu => handle_global_menu_key(&mut self.state, key_event),
                 Mode::KeybindHelp => handle_keybind_help_key(&mut self.state, key_event),
@@ -358,6 +360,12 @@ impl App {
                     MouseAction::RenameModal(action) => {
                         self.apply_rename_mouse_action_via_api(action)
                     }
+                    MouseAction::WorkspaceColorModal(option) => match option {
+                        Some(option) => {
+                            modal::apply_workspace_color_option(&mut self.state, option)
+                        }
+                        None => modal::cancel_workspace_color_picker(&mut self.state),
+                    },
                     MouseAction::ConfirmCloseAccept => self.confirm_close_accept_via_api(),
                     MouseAction::ContextMenu { menu, idx } => {
                         self.apply_context_menu_action_via_api(menu, idx)
