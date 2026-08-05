@@ -149,9 +149,9 @@ pub(super) fn render_workspace_color_overlay(app: &AppState, frame: &mut Frame, 
         Style::default().fg(p.subtext0)
     };
     let default_label = if current.is_none() {
-        " default (current)"
+        " auto (current)"
     } else {
-        " default (clear)"
+        " auto (clear pick)"
     };
     frame.render_widget(
         Paragraph::new(Span::styled(default_label, default_style)),
