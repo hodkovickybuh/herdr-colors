@@ -15,6 +15,8 @@ pub(super) struct AgentRow {
     pub(super) status: crate::api::schema::AgentStatus,
     pub(super) focused: bool,
     pub(super) rows: Vec<Vec<crate::ui::ResolvedToken>>,
+    /// The workspace's identity swatch, so an agent row matches its space.
+    pub(super) color: Option<ratatui::style::Color>,
 }
 
 pub(super) fn ordered_agent_pane_ids(
@@ -315,6 +317,10 @@ pub(super) fn agent_row(
         status: agent.agent_status,
         focused: agent.focused,
         rows,
+        color: workspace
+            .color
+            .as_deref()
+            .and_then(crate::app::state::workspace_swatch_color),
     })
 }
 
@@ -330,15 +336,12 @@ pub(super) fn render_agent_row(
     } else {
         Style::default()
     };
-    let name_style = if row.focused {
-        Style::default()
-            .fg(palette.text)
-            .add_modifier(Modifier::BOLD)
+    let name_fg = row.color.unwrap_or(if row.focused {
+        palette.text
     } else {
-        Style::default()
-            .fg(palette.subtext0)
-            .add_modifier(Modifier::BOLD)
-    };
+        palette.subtext0
+    });
+    let name_style = Style::default().fg(name_fg).add_modifier(Modifier::BOLD);
     let status_style = Style::default().fg(status_color(row.status, palette));
     let secondary = Style::default().fg(palette.overlay0);
     let icon = (

@@ -49,6 +49,7 @@ const CLIENT_SHELL_METHODS: &[&str] = &[
     "workspace.move",
     "workspace.move_block",
     "workspace.rename",
+    "workspace.set_color",
     "worktree.create",
     "worktree.list",
     "worktree.open",
@@ -292,6 +293,11 @@ mod tests {
         assert_eq!(
             actual.remove("pane.clear").as_deref(),
             Some("0301d288ba198ddaa427dd7421c71911cccaf4ea03544531efa8b67ca21b08f6")
+        );
+        // herdr-colors: the sidebar Color... picker sends this.
+        assert_eq!(
+            actual.remove("workspace.set_color").as_deref(),
+            Some("c98bdc839482214b1402898745bccd97cbcf0e2911643cb932802be98a9229cc")
         );
         assert_eq!(
             actual.remove("pane.link.resolve").as_deref(),

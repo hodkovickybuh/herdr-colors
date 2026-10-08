@@ -55,6 +55,12 @@ pub(super) fn snapshot_with_completions(
             app.public_pane_id(workspace_index, pane_id)
         })
         .or_else(|| snapshot.focused_pane_id.clone());
+    let workspace_colors = crate::app::state::resolve_workspace_colors(
+        app.state
+            .workspaces
+            .iter()
+            .map(|state| (state.identity_cwd.as_path(), state.color.as_deref())),
+    );
     let workspaces = snapshot
         .workspaces
         .into_iter()
@@ -84,9 +90,7 @@ pub(super) fn snapshot_with_completions(
                 number: workspace.number,
                 label: workspace.label,
                 custom_label: state.custom_name.is_some(),
-                color: Some(state.color.clone().unwrap_or_else(|| {
-                    crate::app::state::auto_workspace_color_key(&state.identity_cwd).to_owned()
-                })),
+                color: workspace_colors.get(workspace_index).cloned(),
                 custom_color: state.color.is_some(),
                 branch: state.branch(),
                 git_ahead_behind: state.git_ahead_behind(),

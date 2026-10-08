@@ -102,15 +102,59 @@ pub(crate) fn workspace_swatch_color(key: &str) -> Option<Color> {
         .find_map(|(k, color)| (k == key).then_some(color))
 }
 
-/// Deterministic auto color for workspaces without a manual pick (FNV-1a over
-/// the project directory): same project always lands on the same swatch.
-// ponytail: 12 colors for N projects means collisions; a manual Color... pick wins.
+/// Swatches the auto color may use: red and teal stay reserved for the blocked
+/// and finished-unseen states (maroon is too close to red), so an auto-colored
+/// name never reads as a status.
+const AUTO_SWATCHES: [&str; 9] = [
+    "peach", "yellow", "green", "sky", "blue", "sapphire", "mauve", "pink", "lavender",
+];
+
+/// Preferred auto swatch for a project directory (FNV-1a, no seed): the same
+/// project always starts from the same slot.
+#[cfg(test)]
 pub(crate) fn auto_workspace_color_key(cwd: &std::path::Path) -> &'static str {
+    AUTO_SWATCHES[auto_slot(cwd)]
+}
+
+fn auto_slot(cwd: &std::path::Path) -> usize {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in cwd.as_os_str().as_encoded_bytes() {
         h = (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01b3);
     }
-    WORKSPACE_SWATCHES[(h % WORKSPACE_SWATCHES.len() as u64) as usize].0
+    (h % AUTO_SWATCHES.len() as u64) as usize
+}
+
+/// Auto colors for a whole sidebar, in workspace order: each workspace without
+/// a manual pick takes its preferred slot, or the next free one, so open
+/// workspaces never share a color until all nine are in use. Manual picks are
+/// returned unchanged and reserve their swatch.
+// ponytail: closing a workspace can shift a later one that had probed past it.
+pub(crate) fn resolve_workspace_colors<'a>(
+    workspaces: impl IntoIterator<Item = (&'a std::path::Path, Option<&'a str>)>,
+) -> Vec<String> {
+    let workspaces: Vec<_> = workspaces.into_iter().collect();
+    let mut used: std::collections::HashMap<&str, usize> = workspaces
+        .iter()
+        .filter_map(|(_, manual)| *manual)
+        .fold(Default::default(), |mut m, k| {
+            *m.entry(k).or_default() += 1;
+            m
+        });
+    workspaces
+        .iter()
+        .map(|(cwd, manual)| {
+            if let Some(key) = manual {
+                return (*key).to_owned();
+            }
+            let start = auto_slot(cwd);
+            let fewest = (0..AUTO_SWATCHES.len())
+                .map(|i| AUTO_SWATCHES[(start + i) % AUTO_SWATCHES.len()])
+                .min_by_key(|k| used.get(k).copied().unwrap_or(0))
+                .unwrap_or(AUTO_SWATCHES[start]);
+            *used.entry(fewest).or_default() += 1;
+            fewest.to_owned()
+        })
+        .collect()
 }
 
 impl Palette {
@@ -1360,7 +1404,36 @@ mod tests {
         assert_eq!(super::workspace_swatch_color("not-a-swatch"), None);
     }
 
-    const EXPECTED_AUTO_KEY: &str = "blue";
+    #[test]
+    fn auto_colors_skip_status_colors_and_stay_unique() {
+        let dirs: Vec<std::path::PathBuf> = (0..9)
+            .map(|i| std::path::PathBuf::from(format!("/Users/me/p{i}")))
+            .collect();
+        let mut input: Vec<_> = dirs.iter().map(|d| (d.as_path(), None)).collect();
+        input[0].1 = Some("mauve");
+        let colors = super::resolve_workspace_colors(input);
+        assert_eq!(colors[0], "mauve");
+        let mut unique = colors.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(
+            unique.len(),
+            9,
+            "nine workspaces, nine distinct colors: {colors:?}"
+        );
+        assert!(colors
+            .iter()
+            .all(|c| c != "red" && c != "teal" && c != "maroon"));
+        // Same input, same answer across restarts.
+        let again = super::resolve_workspace_colors(
+            dirs.iter()
+                .enumerate()
+                .map(|(i, d)| (d.as_path(), (i == 0).then_some("mauve"))),
+        );
+        assert_eq!(colors, again);
+    }
+
+    const EXPECTED_AUTO_KEY: &str = "pink";
 
     use super::*;
     use crossterm::event::KeyEvent;
