@@ -84,6 +84,10 @@ pub(super) fn snapshot_with_completions(
                 number: workspace.number,
                 label: workspace.label,
                 custom_label: state.custom_name.is_some(),
+                color: Some(state.color.clone().unwrap_or_else(|| {
+                    crate::app::state::auto_workspace_color_key(&state.identity_cwd).to_owned()
+                })),
+                custom_color: state.color.is_some(),
                 branch: state.branch(),
                 git_ahead_behind: state.git_ahead_behind(),
                 tokens,

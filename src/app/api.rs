@@ -1036,6 +1036,9 @@ impl App {
             Method::WorkspaceRename(params) => {
                 return self.handle_workspace_rename(request.id, params);
             }
+            Method::WorkspaceSetColor(params) => {
+                return self.handle_workspace_set_color(request.id, params);
+            }
             Method::WorkspaceMove(params) => {
                 return self.handle_workspace_move(request.id, params);
             }
@@ -1449,6 +1452,42 @@ mod tests {
         )
         .await
         .expect("matching agent detection runtime should be reset");
+    }
+
+    #[test]
+    fn workspace_set_color_validates_swatch_and_clears_to_auto() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &crate::config::Config::default(),
+            crate::app::AppPolicy::TEST,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.state.workspaces = vec![crate::workspace::Workspace::test_new("one")];
+        app.state.ensure_test_terminals();
+        let workspace_id = app.public_workspace_id(0);
+        let set = |app: &mut App, color: Option<&str>| {
+            let response = app.handle_api_request(crate::api::schema::Request {
+                id: "color".into(),
+                method: crate::api::schema::Method::WorkspaceSetColor(
+                    crate::api::schema::WorkspaceSetColorParams {
+                        workspace_id: workspace_id.clone(),
+                        color: color.map(str::to_owned),
+                    },
+                ),
+            });
+            serde_json::from_str::<serde_json::Value>(&response).unwrap()
+        };
+
+        assert!(set(&mut app, Some("teal"))["error"].is_null());
+        assert_eq!(
+            set(&mut app, Some("chartreuse"))["error"]["code"],
+            "invalid_params"
+        );
+        assert_eq!(app.state.workspaces[0].color.as_deref(), Some("teal"));
+        assert!(set(&mut app, None)["error"].is_null());
+        assert_eq!(app.state.workspaces[0].color, None);
     }
 
     #[test]

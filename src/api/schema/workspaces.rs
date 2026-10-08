@@ -33,6 +33,16 @@ pub struct WorkspaceRenameParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct WorkspaceSetColorParams {
+    pub workspace_id: String,
+    /// Sidebar swatch key (red, maroon, peach, yellow, green, teal, sky, blue,
+    /// sapphire, mauve, pink, lavender). Omit or null to return to the
+    /// automatic per-project color.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WorkspaceMoveParams {
     pub workspace_id: String,
     pub insert_index: usize,

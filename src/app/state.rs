@@ -73,6 +73,46 @@ pub struct Palette {
     pub peach: Color,
 }
 
+/// Vivid red used when a workspace's agent is blocked on human input.
+/// Deliberately brighter than the palette red so it reads at a glance.
+pub(crate) const ATTENTION_RED: Color = Color::Rgb(0xff, 0x5f, 0x6d);
+
+/// The 12 workspace accent swatches as fixed vivid RGBs (not theme-backed):
+/// bright enough to read on the sidebar's dark surface at a glance.
+pub(crate) const WORKSPACE_SWATCHES: [(&str, Color); 12] = [
+    ("red", ATTENTION_RED),
+    ("maroon", Color::Rgb(0xff, 0x8f, 0xa3)),
+    ("peach", Color::Rgb(0xff, 0xa0, 0x57)),
+    ("yellow", Color::Rgb(0xff, 0xe0, 0x66)),
+    ("green", Color::Rgb(0x69, 0xf0, 0xa0)),
+    ("teal", Color::Rgb(0x4d, 0xe3, 0xd1)),
+    ("sky", Color::Rgb(0x66, 0xe0, 0xff)),
+    ("blue", Color::Rgb(0x7c, 0x9a, 0xff)),
+    ("sapphire", Color::Rgb(0x4f, 0xb8, 0xff)),
+    ("mauve", Color::Rgb(0xc7, 0x9b, 0xff)),
+    ("pink", Color::Rgb(0xff, 0x9e, 0xf0)),
+    ("lavender", Color::Rgb(0xb9, 0xc0, 0xff)),
+];
+
+/// Resolve a stored workspace color swatch key. Unknown keys yield None so
+/// callers fall back to the default styling.
+pub(crate) fn workspace_swatch_color(key: &str) -> Option<Color> {
+    WORKSPACE_SWATCHES
+        .into_iter()
+        .find_map(|(k, color)| (k == key).then_some(color))
+}
+
+/// Deterministic auto color for workspaces without a manual pick (FNV-1a over
+/// the project directory): same project always lands on the same swatch.
+// ponytail: 12 colors for N projects means collisions; a manual Color... pick wins.
+pub(crate) fn auto_workspace_color_key(cwd: &std::path::Path) -> &'static str {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in cwd.as_os_str().as_encoded_bytes() {
+        h = (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    WORKSPACE_SWATCHES[(h % WORKSPACE_SWATCHES.len() as u64) as usize].0
+}
+
 impl Palette {
     /// Catppuccin Mocha — the default.
     pub fn catppuccin() -> Self {
@@ -1306,6 +1346,22 @@ impl AppState {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn auto_workspace_color_is_deterministic_per_directory() {
+        let key = super::auto_workspace_color_key(std::path::Path::new("/Users/me/project"));
+        // Same directory, same swatch, across calls and restarts (FNV-1a, no seed).
+        assert_eq!(
+            key,
+            super::auto_workspace_color_key(std::path::Path::new("/Users/me/project"))
+        );
+        assert!(super::workspace_swatch_color(key).is_some());
+        // Pinned value: changing the hash would silently recolor every workspace.
+        assert_eq!(key, EXPECTED_AUTO_KEY);
+        assert_eq!(super::workspace_swatch_color("not-a-swatch"), None);
+    }
+
+    const EXPECTED_AUTO_KEY: &str = "blue";
+
     use super::*;
     use crossterm::event::KeyEvent;
 

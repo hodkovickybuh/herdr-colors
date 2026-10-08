@@ -178,6 +178,8 @@ pub struct Workspace {
     pub id: String,
     /// User-provided override. If set, auto-derived identity stops updating.
     pub custom_name: Option<String>,
+    /// User-picked sidebar accent swatch key (see `WORKSPACE_SWATCHES`).
+    pub color: Option<String>,
     /// Fallback workspace identity source for tests, old snapshots, or missing runtimes.
     pub identity_cwd: PathBuf,
     /// CWD from which the cached automatic label and Git metadata were derived.
@@ -252,6 +254,7 @@ impl Workspace {
         Self {
             id,
             custom_name: label,
+            color: None,
             identity_cwd: identity_cwd.clone(),
             cached_identity_cwd: identity_cwd.clone(),
             cached_auto_label,
@@ -404,6 +407,7 @@ impl Workspace {
             Self {
                 id,
                 custom_name: None,
+                color: None,
                 identity_cwd: initial_cwd.clone(),
                 cached_identity_cwd: initial_cwd.clone(),
                 cached_auto_label,
@@ -1003,6 +1007,10 @@ impl Workspace {
         self.custom_name = Some(name);
     }
 
+    pub fn set_color(&mut self, color: Option<String>) {
+        self.color = color;
+    }
+
     #[cfg(test)]
     pub fn resolved_identity_cwd(&self) -> Option<PathBuf> {
         Some(self.identity_cwd.clone())
@@ -1193,6 +1201,7 @@ impl Workspace {
         Self {
             id: generate_workspace_id(),
             custom_name: Some(name.to_string()),
+            color: None,
             identity_cwd: identity_cwd.clone(),
             cached_identity_cwd: identity_cwd.clone(),
             cached_auto_label: fallback_label_from_cwd(&identity_cwd),

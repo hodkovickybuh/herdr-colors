@@ -1048,6 +1048,14 @@ pub struct ClientShellWorkspace {
     pub number: usize,
     pub label: String,
     pub custom_label: bool,
+    /// Effective sidebar swatch key: the manual pick, else the per-project auto color.
+    /// Defaulted (not skipped) so the JSON endpoint stays additive and the
+    /// bincode encoding keeps a fixed field layout.
+    #[serde(default)]
+    pub color: Option<String>,
+    /// Whether `color` is a manual pick rather than the automatic one.
+    #[serde(default)]
+    pub custom_color: bool,
     pub branch: Option<String>,
     pub git_ahead_behind: Option<(usize, usize)>,
     pub tokens: Vec<(String, String)>,
@@ -2848,6 +2856,8 @@ mod tests {
             agent_view_label: None,
             agent_order: Vec::new(),
             workspaces: vec![ClientShellWorkspace {
+                color: None,
+                custom_color: false,
                 workspace_id: "w1".into(),
                 active_tab_id: "w1:t1".into(),
                 new_workspace_cwd: "/tmp".into(),

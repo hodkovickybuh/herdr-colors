@@ -4512,6 +4512,24 @@
           ],
           "type": "object"
         },
+        "WorkspaceSetColorParams": {
+          "properties": {
+            "color": {
+              "description": "Sidebar swatch key (red, maroon, peach, yellow, green, teal, sky, blue,\nsapphire, mauve, pink, lavender). Omit or null to return to the\nautomatic per-project color.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspace_id"
+          ],
+          "type": "object"
+        },
         "WorkspaceTarget": {
           "properties": {
             "workspace_id": {
@@ -4993,6 +5011,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/WorkspaceRenameParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.set_color",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/WorkspaceSetColorParams"
             }
           },
           "required": [

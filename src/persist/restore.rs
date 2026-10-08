@@ -419,6 +419,7 @@ fn restore_workspace(
         Some(Workspace {
             id: workspace_id,
             custom_name: snap.custom_name.clone(),
+            color: snap.color.clone(),
             identity_cwd: snap.identity_cwd.clone(),
             cached_identity_cwd: snap.identity_cwd.clone(),
             cached_auto_label,
@@ -1448,6 +1449,7 @@ mod tests {
         let snapshot = SessionSnapshot {
             version: super::super::snapshot::SNAPSHOT_VERSION,
             workspaces: vec![WorkspaceSnapshot {
+                color: None,
                 id: Some("workspace".into()),
                 custom_name: None,
                 identity_cwd: cwd.clone(),
@@ -1529,6 +1531,7 @@ mod tests {
         let snapshot = SessionSnapshot {
             version: super::super::snapshot::SNAPSHOT_VERSION,
             workspaces: vec![WorkspaceSnapshot {
+                color: None,
                 id: Some("w1".into()),
                 custom_name: None,
                 identity_cwd: cwd.clone(),
@@ -1642,6 +1645,7 @@ mod tests {
         let snapshot = SessionSnapshot {
             version: super::super::snapshot::SNAPSHOT_VERSION,
             workspaces: vec![WorkspaceSnapshot {
+                color: None,
                 id: Some("w1".into()),
                 custom_name: None,
                 identity_cwd: cwd.clone(),
@@ -1725,6 +1729,7 @@ mod tests {
     fn legacy_restore_precomputes_missing_public_pane_numbers() {
         let cwd = std::env::current_dir().unwrap();
         let snapshot = WorkspaceSnapshot {
+            color: None,
             id: Some("w1".into()),
             custom_name: None,
             identity_cwd: cwd,
@@ -1764,6 +1769,7 @@ mod tests {
         let snapshot = SessionSnapshot {
             version: super::super::snapshot::SNAPSHOT_VERSION,
             workspaces: vec![WorkspaceSnapshot {
+                color: None,
                 id: Some("workspace".into()),
                 custom_name: None,
                 identity_cwd: cwd.clone(),
@@ -2120,6 +2126,7 @@ mod tests {
         let snapshot = SessionSnapshot {
             version: super::super::snapshot::SNAPSHOT_VERSION,
             workspaces: vec![WorkspaceSnapshot {
+                color: None,
                 id: Some("workspace".into()),
                 custom_name: None,
                 identity_cwd: cwd,

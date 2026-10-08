@@ -54,6 +54,8 @@ pub struct WorkspaceSnapshot {
     pub id: Option<String>,
     #[serde(default)]
     pub custom_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     pub identity_cwd: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_space: Option<crate::workspace::WorktreeSpaceMembership>,
@@ -167,6 +169,7 @@ impl From<LegacyWorkspaceSnapshot> for WorkspaceSnapshot {
         Self {
             id: None,
             custom_name: snap.custom_name,
+            color: None,
             identity_cwd,
             worktree_space: None,
             public_pane_numbers: HashMap::new(),
@@ -305,6 +308,7 @@ fn capture_workspace(
     WorkspaceSnapshot {
         id: Some(ws.id.clone()),
         custom_name: ws.custom_name.clone(),
+        color: ws.color.clone(),
         identity_cwd,
         worktree_space: ws.worktree_space.clone(),
         public_pane_numbers: ws
@@ -724,6 +728,7 @@ mod tests {
 
         let snap = SessionSnapshot {
             workspaces: vec![WorkspaceSnapshot {
+                color: None,
                 id: Some("wproj".to_string()),
                 custom_name: Some("pi-mono".to_string()),
                 identity_cwd: PathBuf::from("/home/can/Projects/herdr"),
@@ -909,6 +914,30 @@ mod tests {
         assert_eq!(workspace.active_tab, second_tab);
         assert_eq!(workspace.tabs[0].custom_name.as_deref(), Some("main"));
         assert_eq!(workspace.tabs[1].custom_name.as_deref(), Some("logs"));
+    }
+
+    #[test]
+    fn workspace_color_round_trips_through_snapshot() {
+        let mut state = state_with_workspaces(&["colored", "plain"]);
+        state.workspaces[0].set_color(Some("mauve".to_string()));
+
+        let snap = capture_from_state(&state);
+        assert_eq!(snap.workspaces[0].color.as_deref(), Some("mauve"));
+        assert_eq!(snap.workspaces[1].color, None);
+
+        let json = serde_json::to_string(&snap).unwrap();
+        assert!(json.contains("\"color\":\"mauve\""));
+        // unset colors stay out of the JSON entirely
+        assert_eq!(json.matches("\"color\"").count(), 1);
+
+        let restored = parse_snapshot(&json).unwrap();
+        assert_eq!(restored.workspaces[0].color.as_deref(), Some("mauve"));
+        assert_eq!(restored.workspaces[1].color, None);
+
+        // Snapshots written before the color field existed still load.
+        let old = parse_snapshot(session_fixture("current-herdr")).unwrap();
+        assert!(!old.workspaces.is_empty());
+        assert!(old.workspaces.iter().all(|ws| ws.color.is_none()));
     }
 
     #[test]
@@ -1425,6 +1454,7 @@ mod tests {
         let snap = SessionSnapshot {
             version: SNAPSHOT_VERSION,
             workspaces: vec![WorkspaceSnapshot {
+                color: None,
                 id: Some("test-ws".to_string()),
                 custom_name: Some("fallback test".to_string()),
                 identity_cwd: PathBuf::from("/tmp"),
