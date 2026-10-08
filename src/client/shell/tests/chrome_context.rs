@@ -553,6 +553,7 @@ fn workspace_color_picker_sets_color_and_sidebar_uses_it() {
         Some(ClientShellOverlay::WorkspaceColor(ClientWorkspaceColorOverlay {
             ref workspace_id,
             selected,
+            ..
         })) if workspace_id == "ws_1" && selected == swatches
     ));
     let frame = state.compose(106, 20).expect("color picker");
@@ -606,4 +607,76 @@ fn workspace_color_picker_sets_color_and_sidebar_uses_it() {
         name_fg(&mut state, colored),
         crate::app::state::ATTENTION_RED
     );
+}
+
+#[test]
+fn workspace_color_picker_starts_on_shown_color_previews_and_takes_digits() {
+    fn name_fg(state: &mut ClientShellState) -> ratatui::style::Color {
+        let frame = state.compose(106, 20).expect("frame");
+        let row = state.hits.workspaces[0].rect;
+        let buffer = frame.to_ratatui_buffer().expect("buffer");
+        let x = (row.x..row.right())
+            .find(|x| buffer[(*x, row.y)].symbol() == "c")
+            .expect("workspace label");
+        buffer[(x, row.y)].fg
+    }
+    fn open_picker(state: &mut ClientShellState) {
+        state.compose(106, 20).expect("frame");
+        let workspace = state.hits.workspaces[0].rect;
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Right),
+            column: workspace.x + 2,
+            row: workspace.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+        state.compose(106, 20).expect("context menu");
+        let color_row = state.hits.context_menu_rows[1].0;
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: color_row.x + 1,
+            row: color_row.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+    }
+    let swatch = |key| crate::app::state::workspace_swatch_color(key).unwrap();
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    let mut auto = snapshot();
+    auto.workspaces[0].color = Some("sky".into());
+    state.set_snapshot(Box::new(auto));
+    state.set_pane_surface(surface());
+
+    // Auto-colored sky: the cursor starts on sky, not on "auto".
+    open_picker(&mut state);
+    let sky = crate::app::state::WORKSPACE_SWATCHES
+        .iter()
+        .position(|(key, _)| *key == "sky")
+        .unwrap();
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::WorkspaceColor(ClientWorkspaceColorOverlay {
+            selected, ref pick, ..
+        })) if selected == sky && pick.is_none()
+    ));
+
+    // Arrowing previews the next swatch live; Esc reverts without a request.
+    assert!(state.handle_input_bytes(b"j").actions.is_empty());
+    assert_eq!(name_fg(&mut state), swatch("blue"));
+    assert!(state.handle_input_bytes(b"\x1b").actions.is_empty());
+    assert!(state.overlay.is_none());
+    assert_eq!(name_fg(&mut state), swatch("sky"));
+
+    // A digit applies at once: 3 is the third swatch, 0 is auto.
+    for (key, expected) in [(b"3", Some("peach")), (b"0", None)] {
+        open_picker(&mut state);
+        let apply = state.handle_input_bytes(key);
+        let [ClientShellAction::Endpoint { request, .. }] = &apply.actions[..] else {
+            panic!("digit should apply over the endpoint API");
+        };
+        assert!(matches!(
+            &request.method,
+            crate::api::schema::Method::WorkspaceSetColor(params)
+                if params.color.as_deref() == expected
+        ));
+        assert!(state.overlay.is_none());
+    }
 }

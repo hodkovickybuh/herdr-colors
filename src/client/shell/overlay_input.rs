@@ -902,6 +902,14 @@ impl ClientShellState {
                 KeyCode::Right | KeyCode::Down | KeyCode::Char('j') => {
                     picker.selected = (picker.selected + 1) % count;
                 }
+                // 1-9 pick the first nine swatches at once, 0 returns to auto.
+                KeyCode::Char(digit @ '0'..='9') => {
+                    let option = match digit {
+                        '0' => count - 1,
+                        _ => digit as usize - '1' as usize,
+                    };
+                    self.apply_workspace_color_option(option, outcome);
+                }
                 _ => return,
             }
             outcome.repaint = true;
@@ -941,6 +949,26 @@ impl ClientShellState {
         if rename.input.handle_key(key).is_some() {
             outcome.repaint = true;
         }
+    }
+
+    /// The snapshot with the picker's highlighted color applied to its
+    /// workspace, so the sidebar previews it live. Esc simply drops the overlay.
+    pub(super) fn workspace_color_preview(&self) -> Option<ClientShellSnapshot> {
+        let Some(ClientShellOverlay::WorkspaceColor(picker)) = &self.overlay else {
+            return None;
+        };
+        let mut snapshot = self.snapshot.as_deref()?.clone();
+        let workspace = snapshot
+            .workspaces
+            .iter_mut()
+            .find(|workspace| workspace.workspace_id == picker.workspace_id)?;
+        match crate::app::state::WORKSPACE_SWATCHES.get(picker.selected) {
+            Some((key, _)) => workspace.color = Some((*key).to_owned()),
+            // The auto color behind a manual pick is server-side; show none.
+            None if workspace.custom_color => workspace.color = None,
+            None => {}
+        }
+        Some(snapshot)
     }
 
     /// Apply a picker option and close the dialog. Options below the swatch

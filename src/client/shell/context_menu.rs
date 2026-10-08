@@ -253,22 +253,26 @@ impl ClientShellState {
                 }
             }
             ClientContextMenuAction::Color => {
-                let current = self.snapshot.as_deref().and_then(|snapshot| {
+                let workspace = self.snapshot.as_deref().and_then(|snapshot| {
                     snapshot
                         .workspaces
                         .iter()
                         .find(|workspace| workspace.workspace_id == workspace_id)
-                        .filter(|workspace| workspace.custom_color)
-                        .and_then(|workspace| workspace.color.clone())
                 });
+                // Start on the swatch the workspace shows now (pick, rule or auto).
+                let shown = workspace.and_then(|workspace| workspace.color.clone());
+                let pick = workspace
+                    .filter(|workspace| workspace.custom_color)
+                    .and_then(|workspace| workspace.color.clone());
                 let swatches = crate::app::state::WORKSPACE_SWATCHES;
-                let selected = current
+                let selected = shown
                     .and_then(|key| swatches.iter().position(|(k, _)| *k == key))
                     .unwrap_or(swatches.len());
                 self.overlay = Some(ClientShellOverlay::WorkspaceColor(
                     ClientWorkspaceColorOverlay {
                         workspace_id,
                         selected,
+                        pick,
                     },
                 ));
             }

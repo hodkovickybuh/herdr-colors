@@ -63,7 +63,7 @@ pub(crate) fn render_client_overlay(
         }
         ClientShellOverlay::Rename(v) => render_rename_overlay(b, v, p),
         ClientShellOverlay::ConfirmClose(v) => render_confirm_close_overlay(b, v, p),
-        ClientShellOverlay::WorkspaceColor(v) => render_workspace_color_overlay(b, v, s, p),
+        ClientShellOverlay::WorkspaceColor(v) => render_workspace_color_overlay(b, v, p),
         ClientShellOverlay::Help(v) => render_help_overlay(b, v, k, p),
         ClientShellOverlay::Navigator(v) => {
             render_navigator_overlay(b, v, endpoints, active_endpoint_id, p)
@@ -1243,22 +1243,17 @@ fn render_help_overlay(
 fn render_workspace_color_overlay(
     b: &mut Buffer,
     v: &ClientWorkspaceColorOverlay,
-    s: &ClientShellSnapshot,
     p: &Palette,
 ) -> Option<OverlayRender> {
     const COLS: u16 = 3;
     let swatches = crate::app::state::WORKSPACE_SWATCHES;
-    let q = popup(b.area, 44, 12)?;
+    let q = popup(b.area, 48, 12)?;
     let i = panel(b, q, p.accent, p.panel_bg)?;
     if i.height < 10 || i.width < 12 {
         return None;
     }
-    let current = s
-        .workspaces
-        .iter()
-        .find(|workspace| workspace.workspace_id == v.workspace_id)
-        .filter(|workspace| workspace.custom_color)
-        .and_then(|workspace| workspace.color.as_deref());
+    // The manual pick when the picker opened; the sidebar may be previewing another.
+    let current = v.pick.as_deref();
     put_text(
         b,
         i.x,
@@ -1272,6 +1267,7 @@ fn render_workspace_color_overlay(
     );
     let base = Style::default().fg(p.text).bg(p.panel_bg);
     let highlight = Style::default().fg(p.text).bg(p.surface0);
+    let digit_style = Style::default().fg(p.overlay0);
     let col_width = i.width / COLS;
     let mut rows = Vec::new();
     for (index, (key, color)) in swatches.iter().enumerate() {
@@ -1286,12 +1282,19 @@ fn render_workspace_color_overlay(
             style = style.add_modifier(Modifier::BOLD);
         }
         b.set_style(rect, style);
-        put_text(b, rect.x, rect.y, 4, " ██ ", style.fg(*color));
+        // Number keys 1-9 pick the first nine swatches.
+        let digit = if index < 9 {
+            format!(" {}", index + 1)
+        } else {
+            "  ".to_owned()
+        };
+        put_text(b, rect.x, rect.y, 2, &digit, style.patch(digit_style));
+        put_text(b, rect.x + 2, rect.y, 4, " ██ ", style.fg(*color));
         put_text(
             b,
-            rect.x + 4,
+            rect.x + 6,
             rect.y,
-            rect.width.saturating_sub(4),
+            rect.width.saturating_sub(6),
             key,
             style,
         );
@@ -1304,11 +1307,12 @@ fn render_workspace_color_overlay(
         Style::default().fg(p.subtext0).bg(p.panel_bg)
     };
     b.set_style(auto, auto_style);
+    put_text(b, auto.x, auto.y, 2, " 0", auto_style.patch(digit_style));
     put_text(
         b,
-        auto.x,
+        auto.x + 2,
         auto.y,
-        auto.width,
+        auto.width.saturating_sub(2),
         if current.is_none() {
             " auto (current)"
         } else {
@@ -1317,6 +1321,14 @@ fn render_workspace_color_overlay(
         auto_style,
     );
     rows.push((auto, swatches.len()));
+    put_text(
+        b,
+        i.x,
+        i.y + 8,
+        i.width,
+        " arrows move  ·  1-9, 0 pick  ·  enter apply",
+        Style::default().fg(p.overlay0).bg(p.panel_bg),
+    );
     let rs = row(i, &[12], 2, 9);
     let [cancel] = rs.as_slice() else {
         return None;

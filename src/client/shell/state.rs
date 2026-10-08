@@ -585,6 +585,8 @@ pub(super) struct ClientWorkspaceColorOverlay {
     pub(super) workspace_id: String,
     /// Highlighted option: 0..12 swatches, 12 = auto (clear the manual pick).
     pub(super) selected: usize,
+    /// The manual pick when the picker opened (None = auto or rule).
+    pub(super) pick: Option<String>,
 }
 
 #[derive(Debug)]
