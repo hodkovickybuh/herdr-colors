@@ -93,6 +93,7 @@ pub(super) fn snapshot_with_completions(
                 custom_label: state.custom_name.is_some(),
                 color: workspace_colors.get(workspace_index).cloned(),
                 custom_color: state.color.is_some(),
+                blocked_dim: false,
                 branch: state.branch(),
                 git_ahead_behind: state.git_ahead_behind(),
                 tokens,

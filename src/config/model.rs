@@ -1012,12 +1012,24 @@ pub struct UiConfig {
 }
 
 /// herdr-colors settings under `[ui.colors]`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct ColorsConfig {
     /// `[[ui.colors.rules]]`: the first rule whose `path` glob matches a
     /// workspace directory sets its color. A manual pick still wins.
     pub rules: Vec<ColorRuleConfig>,
+    /// Seconds an agent may wait on input before its workspace name pulses
+    /// and one reminder notification fires. 0 disables. Default: 180.
+    pub blocked_alert_secs: u64,
+}
+
+impl Default for ColorsConfig {
+    fn default() -> Self {
+        Self {
+            rules: Vec::new(),
+            blocked_alert_secs: 180,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

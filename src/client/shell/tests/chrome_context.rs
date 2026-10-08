@@ -680,3 +680,48 @@ fn workspace_color_picker_starts_on_shown_color_previews_and_takes_digits() {
         assert!(state.overlay.is_none());
     }
 }
+
+#[test]
+fn long_blocked_workspace_name_pulses_and_repaints_only_on_phase_flips() {
+    let mut config = Config::default();
+    config.ui.colors.blocked_alert_secs = 5;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    let mut blocked = snapshot();
+    blocked.workspaces[0].agent_status = AgentStatus::Blocked;
+    state.set_snapshot(Box::new(blocked));
+    state.set_pane_surface(surface());
+    let t0 = std::time::Instant::now();
+    state.pulse_epoch = t0;
+    let ms = |n| t0 + std::time::Duration::from_millis(n);
+    let name_fg = |state: &mut ClientShellState| {
+        let frame = state.compose(106, 20).expect("frame");
+        let row = state.hits.workspaces[0].rect;
+        let buffer = frame.to_ratatui_buffer().expect("buffer");
+        let x = (row.x..row.right())
+            .find(|x| buffer[(*x, row.y)].symbol() == "c")
+            .expect("workspace label");
+        buffer[(x, row.y)].fg
+    };
+
+    // Before the threshold: plain red, no repaint requests at all.
+    assert!(!state.tick_blocked_pulse(ms(0)));
+    assert!(!state.tick_blocked_pulse(ms(4_700)));
+    assert_eq!(name_fg(&mut state), crate::app::state::ATTENTION_RED);
+
+    // Past it the name alternates every 500 ms, repainting only on a flip.
+    assert!(state.tick_blocked_pulse(ms(5_600)));
+    assert_eq!(name_fg(&mut state), crate::app::state::ATTENTION_RED_DIM);
+    assert!(!state.tick_blocked_pulse(ms(5_700)));
+    assert!(state.tick_blocked_pulse(ms(6_000)));
+    assert_eq!(name_fg(&mut state), crate::app::state::ATTENTION_RED);
+
+    // Unblocked: the pulse stops and the episode resets.
+    let mut idle = snapshot();
+    idle.revision = 2;
+    let mut idle_surface = surface();
+    idle_surface.projection_revision = 2;
+    state.set_snapshot(Box::new(idle));
+    state.set_pane_surface(idle_surface);
+    assert!(!state.tick_blocked_pulse(ms(6_600)));
+    assert!(state.blocked_since.is_empty() && state.long_blocked.is_empty());
+}

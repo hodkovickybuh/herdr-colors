@@ -3122,6 +3122,7 @@ impl HeadlessServer {
                 prev_agent_label.as_deref(),
                 agent_label.as_deref(),
                 agent,
+                None,
             );
 
             if !forwarded_toast_from_state
@@ -3233,6 +3234,9 @@ impl HeadlessServer {
                     .refresh_agent_notification_delivery_contexts(&mut deliveries);
                 self.app.sync_toast_deadline(previous_toast);
                 for delivery in &deliveries {
+                    if delivery.reminder {
+                        self.forward_semantic_blocked_reminder(delivery);
+                    }
                     self.forward_agent_notification_delivery(delivery);
                 }
                 changed = true;

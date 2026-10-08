@@ -506,6 +506,8 @@ impl App {
             sound: config.ui.sound.clone(),
             toast_config: config.ui.toast.clone(),
             color_rules: config.ui.colors.compiled_rules(),
+            blocked_alert_secs: config.ui.colors.blocked_alert_secs,
+            pending_blocked_reminders: std::collections::HashMap::new(),
             keybinds: config.keybinds(),
             palette: theme_palette,
             theme_name,
@@ -856,6 +858,7 @@ impl App {
                 self.state.sound = config.ui.sound.clone();
                 self.state.toast_config = config.ui.toast.clone();
                 self.state.color_rules = config.ui.colors.compiled_rules();
+                self.state.blocked_alert_secs = config.ui.colors.blocked_alert_secs;
             }
         }
 

@@ -28,6 +28,7 @@ pub(crate) struct ClientShellConfig {
     pub(super) sound_enabled: bool,
     pub(super) toast_delivery: crate::config::ToastDelivery,
     pub(super) toast_delay_seconds: u64,
+    pub(super) blocked_alert_secs: u64,
     pub(super) toast_position: crate::config::ToastHerdrPosition,
     pub(super) copy_on_select: bool,
     pub(super) clipboard_toast_enabled: bool,
@@ -897,6 +898,12 @@ pub(crate) struct ClientShellState {
     pub(super) last_composed_size: Option<(u16, u16)>,
     pub(super) last_composed_at: Option<std::time::Instant>,
     pub(super) selection_repaint_deadline: Option<std::time::Instant>,
+    /// Long-block pulse: when each workspace started waiting on input, which
+    /// ones passed `blocked_alert_secs`, and whether the pulse is dim now.
+    pub(super) blocked_since: HashMap<String, std::time::Instant>,
+    pub(super) long_blocked: HashSet<String>,
+    pub(super) blocked_pulse_dim: bool,
+    pub(super) pulse_epoch: std::time::Instant,
     pub(super) hits: ShellHitMap,
     pub(super) endpoints: Vec<ClientShellEndpoint>,
     pub(super) active_endpoint_id: ClientEndpointId,
@@ -1062,6 +1069,10 @@ impl ClientShellState {
             last_composed_size: None,
             last_composed_at: None,
             selection_repaint_deadline: None,
+            blocked_since: HashMap::new(),
+            long_blocked: HashSet::new(),
+            blocked_pulse_dim: false,
+            pulse_epoch: std::time::Instant::now(),
             hits: ShellHitMap::default(),
             endpoints: vec![local_endpoint()],
             active_endpoint_id: ClientEndpointId::Local,
@@ -1850,6 +1861,44 @@ impl ClientShellState {
         self.endpoint_error_deadline = Some(
             std::time::Instant::now() + std::time::Duration::from_secs(ENDPOINT_ERROR_TIMEOUT_SECS),
         );
+    }
+
+    /// Track how long each workspace has been blocked and flip the pulse
+    /// phase every 500 ms while any passed the threshold. Returns true only
+    /// when the phase changes, so nothing repaints while nothing pulses.
+    pub(crate) fn tick_blocked_pulse(&mut self, now: std::time::Instant) -> bool {
+        let threshold = std::time::Duration::from_secs(self.config.blocked_alert_secs);
+        let blocked: HashSet<&str> = self
+            .snapshot
+            .as_deref()
+            .filter(|_| !threshold.is_zero())
+            .map(|snapshot| {
+                snapshot
+                    .workspaces
+                    .iter()
+                    .filter(|workspace| {
+                        workspace.agent_status == crate::api::schema::AgentStatus::Blocked
+                    })
+                    .map(|workspace| workspace.workspace_id.as_str())
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.blocked_since
+            .retain(|workspace_id, _| blocked.contains(workspace_id.as_str()));
+        for workspace_id in blocked {
+            self.blocked_since
+                .entry(workspace_id.to_owned())
+                .or_insert(now);
+        }
+        self.long_blocked = self
+            .blocked_since
+            .iter()
+            .filter(|(_, since)| now.saturating_duration_since(**since) >= threshold)
+            .map(|(workspace_id, _)| workspace_id.clone())
+            .collect();
+        let dim = !self.long_blocked.is_empty()
+            && (now.saturating_duration_since(self.pulse_epoch).as_millis() / 500) % 2 == 1;
+        std::mem::replace(&mut self.blocked_pulse_dim, dim) != dim
     }
 
     pub(crate) fn tick_endpoint_error(&mut self, now: std::time::Instant) -> bool {

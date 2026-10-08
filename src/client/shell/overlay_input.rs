@@ -951,22 +951,32 @@ impl ClientShellState {
         }
     }
 
-    /// The snapshot with the picker's highlighted color applied to its
-    /// workspace, so the sidebar previews it live. Esc simply drops the overlay.
-    pub(super) fn workspace_color_preview(&self) -> Option<ClientShellSnapshot> {
-        let Some(ClientShellOverlay::WorkspaceColor(picker)) = &self.overlay else {
-            return None;
+    /// The snapshot as the sidebar should draw it: the picker's highlighted
+    /// color previewed on its workspace (Esc simply drops the overlay) and
+    /// long-blocked workspaces in the dim pulse phase. None = draw as is.
+    pub(super) fn sidebar_display_snapshot(&self) -> Option<ClientShellSnapshot> {
+        let picker = match &self.overlay {
+            Some(ClientShellOverlay::WorkspaceColor(picker)) => Some(picker),
+            _ => None,
         };
+        if picker.is_none() && !self.blocked_pulse_dim {
+            return None;
+        }
         let mut snapshot = self.snapshot.as_deref()?.clone();
-        let workspace = snapshot
-            .workspaces
-            .iter_mut()
-            .find(|workspace| workspace.workspace_id == picker.workspace_id)?;
-        match crate::app::state::WORKSPACE_SWATCHES.get(picker.selected) {
-            Some((key, _)) => workspace.color = Some((*key).to_owned()),
-            // The auto color behind a manual pick is server-side; show none.
-            None if workspace.custom_color => workspace.color = None,
-            None => {}
+        for workspace in &mut snapshot.workspaces {
+            workspace.blocked_dim =
+                self.blocked_pulse_dim && self.long_blocked.contains(&workspace.workspace_id);
+            let Some(picker) =
+                picker.filter(|picker| picker.workspace_id == workspace.workspace_id)
+            else {
+                continue;
+            };
+            match crate::app::state::WORKSPACE_SWATCHES.get(picker.selected) {
+                Some((key, _)) => workspace.color = Some((*key).to_owned()),
+                // The auto color behind a manual pick is server-side; show none.
+                None if workspace.custom_color => workspace.color = None,
+                None => {}
+            }
         }
         Some(snapshot)
     }

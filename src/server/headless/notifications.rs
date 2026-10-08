@@ -34,6 +34,34 @@ impl HeadlessServer {
             update.previous_agent_label.as_deref(),
             update.agent_label.as_deref(),
             update.known_agent.or(update.previous_known_agent),
+            None,
+        )
+    }
+
+    /// Client shells only render semantic notifications, so the long-block
+    /// reminder goes out as one; the client applies delivery and suppression.
+    pub(super) fn forward_semantic_blocked_reminder(
+        &mut self,
+        delivery: &crate::app::state::AgentNotificationDelivery,
+    ) -> bool {
+        let Some(ws_idx) = self
+            .app
+            .state
+            .workspaces
+            .iter()
+            .position(|ws| ws.id == delivery.workspace_id)
+        else {
+            return false;
+        };
+        self.forward_semantic_agent_transition(
+            ws_idx,
+            delivery.pane_id,
+            crate::detect::AgentState::Working,
+            crate::detect::AgentState::Blocked,
+            None,
+            Some(&delivery.agent_label),
+            delivery.known_agent,
+            Some(crate::app::actions::BLOCKED_REMINDER_TEXT),
         )
     }
 
@@ -46,6 +74,7 @@ impl HeadlessServer {
         previous_agent_label: Option<&str>,
         agent_label: Option<&str>,
         known_agent: Option<crate::detect::Agent>,
+        event_text_override: Option<&str>,
     ) -> bool {
         let Some(kind) =
             crate::app::actions::notification_toast_for_state_change(false, previous_state, state)
@@ -96,7 +125,10 @@ impl HeadlessServer {
         self.send_to_client_shells(ServerMessage::SemanticNotification(
             protocol::SemanticNotification {
                 kind: semantic_kind,
-                title: format!("{agent_label} {event_text}"),
+                title: format!(
+                    "{agent_label} {}",
+                    event_text_override.unwrap_or(event_text)
+                ),
                 body: non_empty_body(&context),
                 sound,
                 agent,

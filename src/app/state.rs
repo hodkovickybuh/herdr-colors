@@ -76,6 +76,8 @@ pub struct Palette {
 /// Vivid red used when a workspace's agent is blocked on human input.
 /// Deliberately brighter than the palette red so it reads at a glance.
 pub(crate) const ATTENTION_RED: Color = Color::Rgb(0xff, 0x5f, 0x6d);
+/// The dim half of the long-block pulse.
+pub(crate) const ATTENTION_RED_DIM: Color = Color::Rgb(0x8c, 0x34, 0x3c);
 
 /// The 12 workspace accent swatches as fixed vivid RGBs (not theme-backed):
 /// bright enough to read on the sidebar's dark surface at a glance.
@@ -845,6 +847,8 @@ pub struct AgentNotificationDelivery {
     pub toast: Option<ToastNotification>,
     pub client_notification: Option<ToastNotification>,
     pub sound: Option<crate::sound::Sound>,
+    /// A long-block "still waiting" reminder rather than a state change.
+    pub reminder: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -953,6 +957,10 @@ pub struct AppState {
     pub toast_config: ToastConfig,
     /// Compiled `[[ui.colors.rules]]`: first match colors a workspace.
     pub color_rules: Vec<(regex::Regex, &'static str)>,
+    /// `ui.colors.blocked_alert_secs`: delay before the one "still waiting"
+    /// reminder per blocked episode. 0 disables.
+    pub blocked_alert_secs: u64,
+    pub pending_blocked_reminders: std::collections::HashMap<PaneId, PendingAgentNotification>,
     pub keybinds: Keybinds,
     /// UI color palette — all sidebar/UI colors centralized for theming.
     pub palette: Palette,
@@ -1178,6 +1186,8 @@ impl AppState {
             },
             toast_config: ToastConfig::default(),
             color_rules: Vec::new(),
+            blocked_alert_secs: 0,
+            pending_blocked_reminders: std::collections::HashMap::new(),
             keybinds: Keybinds::default(),
             palette: Palette::catppuccin(),
             theme_name: "catppuccin".to_string(),

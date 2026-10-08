@@ -204,8 +204,8 @@ impl ClientShellState {
             ),
             _ => (None, None),
         };
-        let color_preview = self.workspace_color_preview();
-        let snapshot = color_preview.as_ref().unwrap_or(snapshot);
+        let display_snapshot = self.sidebar_display_snapshot();
+        let snapshot = display_snapshot.as_ref().unwrap_or(snapshot);
         let mut buffer = Buffer::empty(Rect::new(0, 0, cols, rows));
         self.hits = render::render_shell(
             &mut buffer,

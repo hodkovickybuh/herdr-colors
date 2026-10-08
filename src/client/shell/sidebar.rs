@@ -33,6 +33,9 @@ pub(in crate::client::shell) fn workspace_name_color(
     palette: &Palette,
 ) -> Option<ratatui::style::Color> {
     match status {
+        crate::api::schema::AgentStatus::Blocked if workspace.blocked_dim => {
+            Some(crate::app::state::ATTENTION_RED_DIM)
+        }
         crate::api::schema::AgentStatus::Blocked => Some(crate::app::state::ATTENTION_RED),
         crate::api::schema::AgentStatus::Done => Some(palette.teal),
         _ => workspace

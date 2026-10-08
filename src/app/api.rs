@@ -626,6 +626,7 @@ impl App {
         pane_id: crate::layout::PaneId,
     ) -> Option<crate::app::actions::PaneStateUpdate> {
         self.state.pending_agent_notifications.remove(&pane_id);
+        self.state.pending_blocked_reminders.remove(&pane_id);
         let previous_toast = self.state.toast.clone();
         let update = self
             .state

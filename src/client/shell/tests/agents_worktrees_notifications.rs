@@ -102,6 +102,7 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
     snapshot.workspaces.push(ClientShellWorkspace {
         color: None,
         custom_color: false,
+        blocked_dim: false,
         workspace_id: "ws_2".into(),
         active_tab_id: "tab_ws2".into(),
         new_workspace_cwd: "/repo/feature".into(),

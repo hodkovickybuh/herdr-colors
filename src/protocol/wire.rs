@@ -1056,6 +1056,10 @@ pub struct ClientShellWorkspace {
     /// Whether `color` is a manual pick rather than the automatic one.
     #[serde(default)]
     pub custom_color: bool,
+    /// Client-local, never on the wire: this workspace is in the dim half of
+    /// the long-block pulse.
+    #[serde(skip)]
+    pub blocked_dim: bool,
     pub branch: Option<String>,
     pub git_ahead_behind: Option<(usize, usize)>,
     pub tokens: Vec<(String, String)>,
@@ -2858,6 +2862,7 @@ mod tests {
             workspaces: vec![ClientShellWorkspace {
                 color: None,
                 custom_color: false,
+                blocked_dim: false,
                 workspace_id: "w1".into(),
                 active_tab_id: "w1:t1".into(),
                 new_workspace_cwd: "/tmp".into(),

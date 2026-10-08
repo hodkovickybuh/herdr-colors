@@ -125,6 +125,9 @@ fn toast_agent_label(agent_label: &str) -> &str {
     agent_label
 }
 
+/// Title suffix of the long-block reminder (herdr-colors).
+pub(crate) const BLOCKED_REMINDER_TEXT: &str = "still waiting for you";
+
 fn toast_event_text(kind: ToastKind) -> &'static str {
     match kind {
         ToastKind::NeedsAttention => "needs attention",
@@ -1814,6 +1817,7 @@ impl AppState {
         }
         let seen = pane.seen;
 
+        self.schedule_blocked_reminder(ws_idx, pane_id, change);
         if !suppress_completion {
             if let Some(delivery) =
                 self.record_or_deliver_agent_notification(ws_idx, pane_id, change)
@@ -1823,6 +1827,49 @@ impl AppState {
         }
 
         Some(seen)
+    }
+
+    /// One "still waiting" reminder per blocked episode, `blocked_alert_secs`
+    /// after an agent starts waiting on input. Leaving blocked cancels it;
+    /// delivery re-checks the state and the usual active-tab suppression.
+    fn schedule_blocked_reminder(
+        &mut self,
+        ws_idx: usize,
+        pane_id: PaneId,
+        change: &EffectiveStateChange,
+    ) {
+        if change.state != AgentState::Blocked {
+            self.pending_blocked_reminders.remove(&pane_id);
+            return;
+        }
+        if self.blocked_alert_secs == 0
+            || change.previous_state == AgentState::Blocked
+            || self.pending_blocked_reminders.contains_key(&pane_id)
+        {
+            return;
+        }
+        let Some(agent_label) = change
+            .agent_label
+            .clone()
+            .or_else(|| change.previous_agent_label.clone())
+        else {
+            return;
+        };
+        let now = std::time::Instant::now();
+        self.pending_blocked_reminders.insert(
+            pane_id,
+            PendingAgentNotification {
+                pane_id,
+                workspace_id: self.workspaces[ws_idx].id.clone(),
+                agent_label,
+                known_agent: change.known_agent.or(change.previous_known_agent),
+                kind: ToastKind::NeedsAttention,
+                state: AgentState::Blocked,
+                deadline: now
+                    .checked_add(std::time::Duration::from_secs(self.blocked_alert_secs))
+                    .unwrap_or(now),
+            },
+        );
     }
 
     fn record_or_deliver_agent_notification(
@@ -1961,6 +2008,7 @@ impl AppState {
             toast,
             client_notification,
             sound,
+            reminder: false,
         })
     }
 
@@ -1978,6 +2026,7 @@ impl AppState {
     pub fn next_pending_agent_notification_deadline(&self) -> Option<std::time::Instant> {
         self.pending_agent_notifications
             .values()
+            .chain(self.pending_blocked_reminders.values())
             .map(|pending| pending.deadline)
             .min()
     }
@@ -1986,17 +2035,30 @@ impl AppState {
         &mut self,
         now: std::time::Instant,
     ) -> Vec<AgentNotificationDelivery> {
-        let due_panes: Vec<PaneId> = self
-            .pending_agent_notifications
-            .iter()
-            .filter_map(|(&pane_id, pending)| (pending.deadline <= now).then_some(pane_id))
-            .collect();
+        let due = |pending: &std::collections::HashMap<PaneId, PendingAgentNotification>| {
+            pending
+                .iter()
+                .filter_map(|(&pane_id, pending)| (pending.deadline <= now).then_some(pane_id))
+                .collect::<Vec<PaneId>>()
+        };
+        let mut due_pending: Vec<(PendingAgentNotification, bool)> = Vec::new();
+        for pane_id in due(&self.pending_agent_notifications) {
+            due_pending.extend(
+                self.pending_agent_notifications
+                    .remove(&pane_id)
+                    .map(|p| (p, false)),
+            );
+        }
+        for pane_id in due(&self.pending_blocked_reminders) {
+            due_pending.extend(
+                self.pending_blocked_reminders
+                    .remove(&pane_id)
+                    .map(|p| (p, true)),
+            );
+        }
         let mut deliveries = Vec::new();
 
-        for pane_id in due_panes {
-            let Some(pending) = self.pending_agent_notifications.remove(&pane_id) else {
-                continue;
-            };
+        for (pending, reminder) in due_pending {
             let Some(ws_idx) = self
                 .workspaces
                 .iter()
@@ -2004,7 +2066,7 @@ impl AppState {
             else {
                 continue;
             };
-            let Some(delivery) = self.agent_notification_delivery(
+            let Some(mut delivery) = self.agent_notification_delivery(
                 ws_idx,
                 pending.pane_id,
                 pending.workspace_id,
@@ -2015,6 +2077,22 @@ impl AppState {
             ) else {
                 continue;
             };
+            if reminder {
+                delivery.reminder = true;
+                let title = format!(
+                    "{} {BLOCKED_REMINDER_TEXT}",
+                    toast_agent_label(&delivery.agent_label)
+                );
+                for toast in [
+                    delivery.toast.as_mut(),
+                    delivery.client_notification.as_mut(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    toast.title.clone_from(&title);
+                }
+            }
             self.apply_agent_notification_delivery(&delivery);
             deliveries.push(delivery);
         }
@@ -2024,6 +2102,7 @@ impl AppState {
 
     fn handle_pane_died(&mut self, pane_id: PaneId) {
         self.pending_agent_notifications.remove(&pane_id);
+        self.pending_blocked_reminders.remove(&pane_id);
         self.remove_plugin_pane_records([pane_id]);
         let ws_idx = self
             .workspaces
@@ -3454,6 +3533,60 @@ mod tests {
         assert_eq!(toast.title, "pi needs attention");
         assert_eq!(toast.context, "background · 2");
         assert!(state.pending_agent_notifications.is_empty());
+    }
+
+    #[test]
+    fn long_block_sends_one_reminder_per_episode() {
+        let mut state = app_with_workspaces(&["active", "background"]);
+        state.active = Some(0);
+        state.toast_config.delivery = crate::config::ToastDelivery::Herdr;
+        state.toast_config.delay_seconds = 0;
+        state.blocked_alert_secs = 180;
+        let pane_id = *state.workspaces[1].panes.keys().next().unwrap();
+        let set_state = |state: &mut AppState, agent_state| {
+            state.handle_app_event(AppEvent::StateChanged {
+                pane_id,
+                agent: Some(Agent::Pi),
+                state: agent_state,
+                visible_blocker: false,
+                visible_working: false,
+                process_exited: false,
+                observed_at: std::time::Instant::now(),
+            });
+        };
+
+        set_state(&mut state, AgentState::Blocked);
+        // The immediate "needs attention" toast is upstream's; ours waits.
+        assert_eq!(state.toast.as_ref().unwrap().title, "pi needs attention");
+        let deadline = state.next_pending_agent_notification_deadline().unwrap();
+        assert!(deadline >= std::time::Instant::now() + std::time::Duration::from_secs(170));
+        assert!(state
+            .drain_due_agent_notifications(std::time::Instant::now())
+            .is_empty());
+
+        let deliveries = state.drain_due_agent_notifications(deadline);
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(
+            deliveries[0].toast.as_ref().unwrap().title,
+            "pi still waiting for you"
+        );
+        assert!(
+            deliveries[0].reminder,
+            "client shells get it as a semantic notification"
+        );
+        // One per episode: nothing more while it stays blocked.
+        assert!(state.next_pending_agent_notification_deadline().is_none());
+
+        // Leaving blocked cancels a pending reminder; blocking again re-arms it.
+        set_state(&mut state, AgentState::Working);
+        set_state(&mut state, AgentState::Blocked);
+        assert!(state.pending_blocked_reminders.contains_key(&pane_id));
+        set_state(&mut state, AgentState::Working);
+        assert!(state.pending_blocked_reminders.is_empty());
+
+        state.blocked_alert_secs = 0;
+        set_state(&mut state, AgentState::Blocked);
+        assert!(state.pending_blocked_reminders.is_empty(), "0 disables");
     }
 
     #[test]
