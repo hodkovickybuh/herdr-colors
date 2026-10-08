@@ -60,6 +60,7 @@ pub(super) fn snapshot_with_completions(
             .workspaces
             .iter()
             .map(|state| (state.identity_cwd.as_path(), state.color.as_deref())),
+        &app.state.color_rules,
     );
     let workspaces = snapshot
         .workspaces

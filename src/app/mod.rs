@@ -505,6 +505,7 @@ impl App {
             pane_scrollback_limit_bytes: config.advanced.scrollback_limit_bytes,
             sound: config.ui.sound.clone(),
             toast_config: config.ui.toast.clone(),
+            color_rules: config.ui.colors.compiled_rules(),
             keybinds: config.keybinds(),
             palette: theme_palette,
             theme_name,
@@ -827,6 +828,7 @@ impl App {
                 diagnostics.push(format!("{diagnostic}; keeping previous [ui] settings"));
             } else {
                 diagnostics.extend(config.ui.sound.diagnostics());
+                diagnostics.extend(config.ui.colors.diagnostics());
                 diagnostics.extend(crate::config::tab_bar_right_diagnostics(
                     &config.ui.tab_bar_right,
                 ));
@@ -853,6 +855,7 @@ impl App {
                 self.state.sidebar_spaces = config.ui.sidebar.spaces.clone();
                 self.state.sound = config.ui.sound.clone();
                 self.state.toast_config = config.ui.toast.clone();
+                self.state.color_rules = config.ui.colors.compiled_rules();
             }
         }
 
@@ -1907,6 +1910,43 @@ mod tests {
         let report = app.reload_config();
         assert_eq!(report.status, crate::config::ConfigReloadStatus::Partial);
         assert_eq!(app.state.sidebar_agents, previous_agents);
+
+        std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn reload_config_applies_workspace_color_rules() {
+        let _guard = config_env_lock().lock().unwrap();
+        let path = temp_config_path("reload-config-color-rules");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
+        let mut app = test_app();
+        assert!(app.state.color_rules.is_empty());
+
+        std::fs::write(
+            &path,
+            "[[ui.colors.rules]]\npath = '/w/upc-*'\ncolor = 'mauve'\n",
+        )
+        .unwrap();
+        assert_eq!(
+            app.reload_config().status,
+            crate::config::ConfigReloadStatus::Applied
+        );
+        assert_eq!(app.state.color_rules.len(), 1);
+        assert!(app.state.color_rules[0].0.is_match("/w/upc-web"));
+
+        std::fs::write(
+            &path,
+            "[[ui.colors.rules]]\npath = '/w/upc-*'\ncolor = 'beige'\n",
+        )
+        .unwrap();
+        let report = app.reload_config();
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.contains("unknown color in ui.colors.rules")));
+        assert!(app.state.color_rules.is_empty());
 
         std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());

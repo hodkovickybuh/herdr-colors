@@ -126,13 +126,27 @@ fn auto_slot(cwd: &std::path::Path) -> usize {
 
 /// Auto colors for a whole sidebar, in workspace order: each workspace without
 /// a manual pick takes its preferred slot, or the next free one, so open
-/// workspaces never share a color until all nine are in use. Manual picks are
-/// returned unchanged and reserve their swatch.
+/// workspaces never share a color until all nine are in use. Manual picks and
+/// rule colors are returned unchanged and reserve their swatch.
 // ponytail: closing a workspace can shift a later one that had probed past it.
 pub(crate) fn resolve_workspace_colors<'a>(
     workspaces: impl IntoIterator<Item = (&'a std::path::Path, Option<&'a str>)>,
+    rules: &[(regex::Regex, &'static str)],
 ) -> Vec<String> {
-    let workspaces: Vec<_> = workspaces.into_iter().collect();
+    // A manual pick wins, then the first matching config rule; both are fixed.
+    let workspaces: Vec<_> = workspaces
+        .into_iter()
+        .map(|(cwd, manual)| {
+            let fixed = manual.or_else(|| {
+                let path = cwd.to_string_lossy();
+                rules
+                    .iter()
+                    .find(|(glob, _)| glob.is_match(&path))
+                    .map(|(_, key)| *key)
+            });
+            (cwd, fixed)
+        })
+        .collect();
     let mut used: std::collections::HashMap<&str, usize> = workspaces
         .iter()
         .filter_map(|(_, manual)| *manual)
@@ -937,6 +951,8 @@ pub struct AppState {
     pub pane_scrollback_limit_bytes: usize,
     pub sound: SoundConfig,
     pub toast_config: ToastConfig,
+    /// Compiled `[[ui.colors.rules]]`: first match colors a workspace.
+    pub color_rules: Vec<(regex::Regex, &'static str)>,
     pub keybinds: Keybinds,
     /// UI color palette — all sidebar/UI colors centralized for theming.
     pub palette: Palette,
@@ -1161,6 +1177,7 @@ impl AppState {
                 ..SoundConfig::default()
             },
             toast_config: ToastConfig::default(),
+            color_rules: Vec::new(),
             keybinds: Keybinds::default(),
             palette: Palette::catppuccin(),
             theme_name: "catppuccin".to_string(),
@@ -1411,7 +1428,7 @@ mod tests {
             .collect();
         let mut input: Vec<_> = dirs.iter().map(|d| (d.as_path(), None)).collect();
         input[0].1 = Some("mauve");
-        let colors = super::resolve_workspace_colors(input);
+        let colors = super::resolve_workspace_colors(input, &[]);
         assert_eq!(colors[0], "mauve");
         let mut unique = colors.clone();
         unique.sort();
@@ -1429,8 +1446,32 @@ mod tests {
             dirs.iter()
                 .enumerate()
                 .map(|(i, d)| (d.as_path(), (i == 0).then_some("mauve"))),
+            &[],
         );
         assert_eq!(colors, again);
+    }
+
+    #[test]
+    fn color_rules_sit_between_manual_picks_and_auto() {
+        let config: crate::config::Config = toml::from_str(
+            "[[ui.colors.rules]]\npath = '/w/upc-*'\ncolor = 'mauve'\n\n\
+             [[ui.colors.rules]]\npath = '/w/deep/**'\ncolor = 'peach'\n\n\
+             [[ui.colors.rules]]\npath = '/w/*'\ncolor = 'no-such-swatch'\n",
+        )
+        .unwrap();
+        let config = config.ui.colors;
+        assert_eq!(config.diagnostics().len(), 1, "unknown swatch is reported");
+        let rules = config.compiled_rules();
+        assert_eq!(rules.len(), 2, "unknown swatch rule is dropped");
+        let paths =
+            ["/w/upc-a", "/w/upc-b", "/w/deep/x/y", "/w/upc-a/sub"].map(std::path::PathBuf::from);
+        let picks = [Some("sky"), None, None, None];
+        let colors =
+            super::resolve_workspace_colors(paths.iter().map(|p| p.as_path()).zip(picks), &rules);
+        // Manual pick beats the matching rule; `**` crosses segments.
+        assert_eq!(&colors[..3], ["sky", "mauve", "peach"]);
+        // `*` stays inside one segment, so this one is auto, on a free swatch.
+        assert!(!["sky", "mauve", "peach"].contains(&colors[3].as_str()));
     }
 
     const EXPECTED_AUTO_KEY: &str = "pink";

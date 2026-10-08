@@ -1007,6 +1007,77 @@ pub struct UiConfig {
     pub toast: ToastConfig,
     /// Play sounds when agents change state in background workspaces.
     pub sound: SoundConfig,
+    /// Workspace color rules (herdr-colors).
+    pub colors: ColorsConfig,
+}
+
+/// herdr-colors settings under `[ui.colors]`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct ColorsConfig {
+    /// `[[ui.colors.rules]]`: the first rule whose `path` glob matches a
+    /// workspace directory sets its color. A manual pick still wins.
+    pub rules: Vec<ColorRuleConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ColorRuleConfig {
+    /// Glob over the workspace directory: `~` expands, `*` and `?` stay inside
+    /// one path segment, `**` crosses segments.
+    pub path: String,
+    /// One of the picker's swatch keys (red, peach, sky, mauve, ...).
+    pub color: String,
+}
+
+impl ColorsConfig {
+    pub fn diagnostics(&self) -> Vec<String> {
+        self.rules
+            .iter()
+            .filter(|rule| crate::app::state::workspace_swatch_color(&rule.color).is_none())
+            .map(|rule| {
+                format!(
+                    "unknown color in ui.colors.rules: \"{}\" for path \"{}\"; rule ignored",
+                    rule.color, rule.path
+                )
+            })
+            .collect()
+    }
+
+    /// Rules ready to match, unknown colors dropped (see `diagnostics`).
+    pub fn compiled_rules(&self) -> Vec<(regex::Regex, &'static str)> {
+        self.rules
+            .iter()
+            .filter_map(|rule| {
+                let key = crate::app::state::WORKSPACE_SWATCHES
+                    .iter()
+                    .find(|(key, _)| *key == rule.color)?
+                    .0;
+                Some((glob_regex(&rule.path)?, key))
+            })
+            .collect()
+    }
+}
+
+/// Translate a path glob to an anchored regex: `**` matches across `/`,
+/// `*` and `?` stay within a segment, everything else is literal.
+fn glob_regex(glob: &str) -> Option<regex::Regex> {
+    let expanded = crate::worktree::expand_tilde_path(glob.trim());
+    let expanded = expanded.to_string_lossy();
+    let mut pattern = String::from("^");
+    let mut chars = expanded.trim_end_matches('/').chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '*' if chars.peek() == Some(&'*') => {
+                chars.next();
+                pattern.push_str(".*");
+            }
+            '*' => pattern.push_str("[^/]*"),
+            '?' => pattern.push_str("[^/]"),
+            c => pattern.push_str(&regex::escape(&c.to_string())),
+        }
+    }
+    pattern.push('$');
+    regex::Regex::new(&pattern).ok()
 }
 
 /// Cursor shape (DECSCUSR) used for the forced IME anchor.
@@ -1227,6 +1298,7 @@ impl Default for UiConfig {
             accent: "cyan".into(),
             toast: ToastConfig::default(),
             sound: SoundConfig::default(),
+            colors: ColorsConfig::default(),
         }
     }
 }
