@@ -115,6 +115,7 @@ pub(super) struct ShellHitMap {
     pub(super) notification_toast: Rect,
     pub(super) global_menu_rows: Vec<(Rect, usize)>,
     pub(super) context_menu_rows: Vec<(Rect, usize)>,
+    pub(super) workspace_color_rows: Vec<(Rect, usize)>,
     pub(super) overlay_primary: Rect,
     pub(super) overlay_clear: Rect,
     pub(super) overlay_cancel: Rect,
@@ -283,6 +284,7 @@ pub(super) enum ClientShellOverlayKind {
     ReleaseNotes,
     Rename,
     ConfirmClose,
+    WorkspaceColor,
     Help,
     Navigator,
     WorktreeCreate,
@@ -511,6 +513,7 @@ pub(super) struct ClientWorktreeRemoveOverlay {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ClientContextMenuAction {
     Rename,
+    Color,
     Close,
     NewWorktree,
     OpenWorktree,
@@ -576,6 +579,14 @@ pub(super) struct ClientConfirmCloseOverlay {
     pub(super) detail: String,
 }
 
+/// Workspace color picker: 12 swatches plus a trailing "auto" option.
+#[derive(Debug)]
+pub(super) struct ClientWorkspaceColorOverlay {
+    pub(super) workspace_id: String,
+    /// Highlighted option: 0..12 swatches, 12 = auto (clear the manual pick).
+    pub(super) selected: usize,
+}
+
 #[derive(Debug)]
 pub(super) enum ClientShellOverlay {
     Onboarding,
@@ -583,6 +594,7 @@ pub(super) enum ClientShellOverlay {
     ReleaseNotes(crate::app::state::ReleaseNotesState),
     Rename(ClientRenameOverlay),
     ConfirmClose(ClientConfirmCloseOverlay),
+    WorkspaceColor(ClientWorkspaceColorOverlay),
     Help(ClientHelpOverlay),
     Navigator(ClientNavigatorOverlay),
     WorktreeCreate(ClientWorktreeCreateOverlay),
@@ -601,6 +613,7 @@ impl ClientShellOverlay {
             Self::ReleaseNotes(_) => ClientShellOverlayKind::ReleaseNotes,
             Self::Rename(_) => ClientShellOverlayKind::Rename,
             Self::ConfirmClose(_) => ClientShellOverlayKind::ConfirmClose,
+            Self::WorkspaceColor(_) => ClientShellOverlayKind::WorkspaceColor,
             Self::Help(_) => ClientShellOverlayKind::Help,
             Self::Navigator(_) => ClientShellOverlayKind::Navigator,
             Self::WorktreeCreate(_) => ClientShellOverlayKind::WorktreeCreate,

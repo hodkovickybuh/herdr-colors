@@ -24,6 +24,24 @@ pub(in crate::client::shell) fn workspace_active_background(
     }
 }
 
+/// Effective identity color for a workspace name, highest signal first:
+/// blocked red > finished-unseen teal > manual pick or per-project auto swatch.
+/// None (e.g. an older endpoint that sends no color) keeps the default styling.
+pub(in crate::client::shell) fn workspace_name_color(
+    workspace: &ClientShellWorkspace,
+    status: crate::api::schema::AgentStatus,
+    palette: &Palette,
+) -> Option<ratatui::style::Color> {
+    match status {
+        crate::api::schema::AgentStatus::Blocked => Some(crate::app::state::ATTENTION_RED),
+        crate::api::schema::AgentStatus::Done => Some(palette.teal),
+        _ => workspace
+            .color
+            .as_deref()
+            .and_then(crate::app::state::workspace_swatch_color),
+    }
+}
+
 pub(in crate::client::shell) fn collapsed_sidebar_sections(
     area: Rect,
 ) -> (Rect, Option<u16>, Rect) {
@@ -83,6 +101,10 @@ pub(crate) fn render_collapsed_sidebar(
             Style::default().fg(palette.text).bg(active_background)
         } else {
             Style::default().fg(palette.overlay0)
+        };
+        let number_style = match workspace_name_color(workspace, workspace.agent_status, palette) {
+            Some(color) => number_style.fg(color),
+            None => number_style,
         };
         put_text(
             buffer,
@@ -325,6 +347,7 @@ pub(crate) fn render_sidebar(
             buffer,
             rect,
             status,
+            workspace_name_color(workspace, status, palette),
             config.status_indicators,
             entry,
             rows,
@@ -652,10 +675,12 @@ pub(in crate::client::shell) fn workspace_rows(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(in crate::client::shell) fn render_workspace_rows(
     buffer: &mut Buffer,
     area: Rect,
     status: crate::api::schema::AgentStatus,
+    name_color: Option<ratatui::style::Color>,
     indicators: crate::config::StatusIndicatorStyle,
     entry: &WorkspaceEntry,
     rows: Vec<Vec<crate::ui::ResolvedToken>>,
@@ -698,12 +723,12 @@ pub(in crate::client::shell) fn render_workspace_rows(
         }
         let highlighted = focused || dragged;
         let workspace_style = Style::default()
-            .fg(if highlighted {
+            .fg(name_color.unwrap_or(if highlighted {
                 palette.text
             } else {
                 palette.subtext0
-            })
-            .add_modifier(if highlighted {
+            }))
+            .add_modifier(if highlighted || name_color.is_some() {
                 Modifier::BOLD
             } else {
                 Modifier::empty()

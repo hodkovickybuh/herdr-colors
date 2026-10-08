@@ -523,3 +523,87 @@ fn close_confirmation_error_becomes_client_owned_overlay_and_stable_group_close(
             if params.workspace_id == "ws_1" && params.close_group
     ));
 }
+
+#[test]
+fn workspace_color_picker_sets_color_and_sidebar_uses_it() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.compose(106, 20).expect("composed frame");
+
+    let workspace = state.hits.workspaces[0].rect;
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Right),
+        column: workspace.x + 2,
+        row: workspace.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    state.compose(106, 20).expect("workspace context menu");
+    let color_row = state.hits.context_menu_rows[1].0;
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: color_row.x + 1,
+        row: color_row.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    // No manual pick yet: the picker opens on the trailing "auto" option.
+    let swatches = crate::app::state::WORKSPACE_SWATCHES.len();
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::WorkspaceColor(ClientWorkspaceColorOverlay {
+            ref workspace_id,
+            selected,
+        })) if workspace_id == "ws_1" && selected == swatches
+    ));
+    let frame = state.compose(106, 20).expect("color picker");
+    let text = frame
+        .cells
+        .iter()
+        .map(|cell| cell.symbol.as_str())
+        .collect::<String>();
+    assert!(text.contains("workspace color") && text.contains("lavender"));
+    assert_eq!(state.hits.workspace_color_rows.len(), swatches + 1);
+
+    // j wraps from "auto" to the first swatch; Enter applies it over the API.
+    assert!(state.handle_input_bytes(b"j").actions.is_empty());
+    let apply = state.handle_input_bytes(b"\r");
+    let [ClientShellAction::Endpoint { request, .. }] = &apply.actions[..] else {
+        panic!("color pick should use endpoint API");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::WorkspaceSetColor(params)
+            if params.workspace_id == "ws_1" && params.color.as_deref() == Some("red")
+    ));
+    assert!(state.overlay.is_none());
+
+    let name_fg = |state: &mut ClientShellState, update: ClientShellSnapshot| {
+        let mut updated_surface = surface();
+        updated_surface.projection_revision = update.revision;
+        state.set_snapshot(Box::new(update));
+        state.set_pane_surface(updated_surface);
+        let frame = state.compose(106, 20).expect("sidebar");
+        let row = state.hits.workspaces[0].rect;
+        let buffer = frame.to_ratatui_buffer().expect("buffer");
+        let x = (row.x..row.right())
+            .find(|x| buffer[(*x, row.y)].symbol() == "c")
+            .expect("workspace label");
+        buffer[(x, row.y)].fg
+    };
+    let mut colored = snapshot();
+    colored.revision = 2;
+    colored.workspaces[0].color = Some("mauve".into());
+    colored.workspaces[0].custom_color = true;
+    assert_eq!(
+        name_fg(&mut state, colored.clone()),
+        crate::app::state::workspace_swatch_color("mauve").unwrap()
+    );
+
+    // An agent blocked on input turns the name red, over the picked color.
+    colored.revision = 3;
+    colored.workspaces[0].agent_status = AgentStatus::Blocked;
+    assert_eq!(
+        name_fg(&mut state, colored),
+        crate::app::state::ATTENTION_RED
+    );
+}

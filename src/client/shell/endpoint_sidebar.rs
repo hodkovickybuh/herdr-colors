@@ -472,6 +472,7 @@ pub(super) fn render_expanded(
                     buffer,
                     nested,
                     status,
+                    super::sidebar::workspace_name_color(workspace, status, palette),
                     config.status_indicators,
                     entry,
                     tokens,

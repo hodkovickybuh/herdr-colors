@@ -1688,6 +1688,23 @@ impl ClientShellState {
             if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
                 return;
             }
+            if matches!(self.overlay, Some(ClientShellOverlay::WorkspaceColor(_))) {
+                // Mirrors the rename modal: any click off a swatch dismisses.
+                let option = self
+                    .hits
+                    .workspace_color_rows
+                    .iter()
+                    .find(|(rect, _)| super::contains(*rect, point))
+                    .map(|(_, option)| *option);
+                match option {
+                    Some(option) => self.apply_workspace_color_option(option, outcome),
+                    None => {
+                        self.overlay = None;
+                        outcome.repaint = true;
+                    }
+                }
+                return;
+            }
             if super::contains(self.hits.overlay_primary, point) {
                 match self.overlay.as_ref() {
                     Some(ClientShellOverlay::Rename(_)) => self.save_rename_overlay(outcome),

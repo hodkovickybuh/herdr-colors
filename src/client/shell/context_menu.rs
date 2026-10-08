@@ -7,7 +7,11 @@ impl ClientContextMenuOverlay {
         let item = |label, action| ClientContextMenuItem { label, action };
         match &self.target {
             ClientContextMenuTarget::Workspace { is_git: false, .. } => {
-                vec![item("Rename", Action::Rename), item("Close", Action::Close)]
+                vec![
+                    item("Rename", Action::Rename),
+                    item("Color...", Action::Color),
+                    item("Close", Action::Close),
+                ]
             }
             ClientContextMenuTarget::Workspace {
                 is_linked_worktree: false,
@@ -15,6 +19,7 @@ impl ClientContextMenuOverlay {
                 ..
             } => vec![
                 item("Rename", Action::Rename),
+                item("Color...", Action::Color),
                 item("Close", Action::Close),
                 item("New worktree", Action::NewWorktree),
                 item("Open worktree...", Action::OpenWorktree),
@@ -24,6 +29,7 @@ impl ClientContextMenuOverlay {
                 ..
             } => vec![
                 item("Rename", Action::Rename),
+                item("Color...", Action::Color),
                 item("Close", Action::Close),
                 item("Delete worktree checkout...", Action::RemoveWorktree),
             ],
@@ -33,6 +39,7 @@ impl ClientContextMenuOverlay {
                 ..
             } => vec![
                 item("Rename", Action::Rename),
+                item("Color...", Action::Color),
                 item("Close group", Action::Close),
                 item("New worktree", Action::NewWorktree),
                 item("Open worktree...", Action::OpenWorktree),
@@ -244,6 +251,26 @@ impl ClientShellState {
                         target: ClientRenameTarget::Workspace { workspace_id },
                     }));
                 }
+            }
+            ClientContextMenuAction::Color => {
+                let current = self.snapshot.as_deref().and_then(|snapshot| {
+                    snapshot
+                        .workspaces
+                        .iter()
+                        .find(|workspace| workspace.workspace_id == workspace_id)
+                        .filter(|workspace| workspace.custom_color)
+                        .and_then(|workspace| workspace.color.clone())
+                });
+                let swatches = crate::app::state::WORKSPACE_SWATCHES;
+                let selected = current
+                    .and_then(|key| swatches.iter().position(|(k, _)| *k == key))
+                    .unwrap_or(swatches.len());
+                self.overlay = Some(ClientShellOverlay::WorkspaceColor(
+                    ClientWorkspaceColorOverlay {
+                        workspace_id,
+                        selected,
+                    },
+                ));
             }
             ClientContextMenuAction::Close => {
                 if self.config.confirm_close {

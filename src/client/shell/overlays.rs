@@ -63,6 +63,7 @@ pub(crate) fn render_client_overlay(
         }
         ClientShellOverlay::Rename(v) => render_rename_overlay(b, v, p),
         ClientShellOverlay::ConfirmClose(v) => render_confirm_close_overlay(b, v, p),
+        ClientShellOverlay::WorkspaceColor(v) => render_workspace_color_overlay(b, v, s, p),
         ClientShellOverlay::Help(v) => render_help_overlay(b, v, k, p),
         ClientShellOverlay::Navigator(v) => {
             render_navigator_overlay(b, v, endpoints, active_endpoint_id, p)
@@ -1236,6 +1237,103 @@ fn render_help_overlay(
         help_scroll_metrics: Some(metrics),
         help_max_scroll: max_scroll,
         cursor,
+        ..OverlayRender::default()
+    })
+}
+fn render_workspace_color_overlay(
+    b: &mut Buffer,
+    v: &ClientWorkspaceColorOverlay,
+    s: &ClientShellSnapshot,
+    p: &Palette,
+) -> Option<OverlayRender> {
+    const COLS: u16 = 3;
+    let swatches = crate::app::state::WORKSPACE_SWATCHES;
+    let q = popup(b.area, 44, 12)?;
+    let i = panel(b, q, p.accent, p.panel_bg)?;
+    if i.height < 10 || i.width < 12 {
+        return None;
+    }
+    let current = s
+        .workspaces
+        .iter()
+        .find(|workspace| workspace.workspace_id == v.workspace_id)
+        .filter(|workspace| workspace.custom_color)
+        .and_then(|workspace| workspace.color.as_deref());
+    put_text(
+        b,
+        i.x,
+        i.y,
+        i.width,
+        "workspace color",
+        Style::default()
+            .fg(p.text)
+            .bg(p.panel_bg)
+            .add_modifier(Modifier::BOLD),
+    );
+    let base = Style::default().fg(p.text).bg(p.panel_bg);
+    let highlight = Style::default().fg(p.text).bg(p.surface0);
+    let col_width = i.width / COLS;
+    let mut rows = Vec::new();
+    for (index, (key, color)) in swatches.iter().enumerate() {
+        let rect = Rect::new(
+            i.x + (index as u16 % COLS) * col_width,
+            i.y + 2 + index as u16 / COLS,
+            col_width,
+            1,
+        );
+        let mut style = if v.selected == index { highlight } else { base };
+        if current == Some(*key) {
+            style = style.add_modifier(Modifier::BOLD);
+        }
+        b.set_style(rect, style);
+        put_text(b, rect.x, rect.y, 4, " ██ ", style.fg(*color));
+        put_text(
+            b,
+            rect.x + 4,
+            rect.y,
+            rect.width.saturating_sub(4),
+            key,
+            style,
+        );
+        rows.push((rect, index));
+    }
+    let auto = Rect::new(i.x, i.y + 7, i.width, 1);
+    let auto_style = if v.selected == swatches.len() {
+        highlight
+    } else {
+        Style::default().fg(p.subtext0).bg(p.panel_bg)
+    };
+    b.set_style(auto, auto_style);
+    put_text(
+        b,
+        auto.x,
+        auto.y,
+        auto.width,
+        if current.is_none() {
+            " auto (current)"
+        } else {
+            " auto (clear pick)"
+        },
+        auto_style,
+    );
+    rows.push((auto, swatches.len()));
+    let rs = row(i, &[12], 2, 9);
+    let [cancel] = rs.as_slice() else {
+        return None;
+    };
+    button(
+        b,
+        *cancel,
+        " esc cancel ",
+        Style::default()
+            .fg(p.text)
+            .bg(p.surface0)
+            .add_modifier(Modifier::BOLD),
+    );
+    Some(OverlayRender {
+        area: q,
+        menu_rows: rows,
+        cancel: *cancel,
         ..OverlayRender::default()
     })
 }

@@ -888,6 +888,26 @@ impl ClientShellState {
             return;
         }
 
+        if let Some(ClientShellOverlay::WorkspaceColor(picker)) = self.overlay.as_mut() {
+            let count = crate::app::state::WORKSPACE_SWATCHES.len() + 1;
+            match key.code {
+                KeyCode::Esc => self.overlay = None,
+                KeyCode::Enter => {
+                    let selected = picker.selected;
+                    self.apply_workspace_color_option(selected, outcome);
+                }
+                KeyCode::Left | KeyCode::Up | KeyCode::Char('k') => {
+                    picker.selected = (picker.selected + count - 1) % count;
+                }
+                KeyCode::Right | KeyCode::Down | KeyCode::Char('j') => {
+                    picker.selected = (picker.selected + 1) % count;
+                }
+                _ => return,
+            }
+            outcome.repaint = true;
+            return;
+        }
+
         let Some(ClientShellOverlay::Rename(rename)) = self.overlay.as_mut() else {
             return;
         };
@@ -921,6 +941,31 @@ impl ClientShellState {
         if rename.input.handle_key(key).is_some() {
             outcome.repaint = true;
         }
+    }
+
+    /// Apply a picker option and close the dialog. Options below the swatch
+    /// count pick that swatch; the trailing option returns to the auto color.
+    pub(super) fn apply_workspace_color_option(
+        &mut self,
+        option: usize,
+        outcome: &mut ClientShellInput,
+    ) {
+        let Some(ClientShellOverlay::WorkspaceColor(picker)) = self.overlay.take() else {
+            return;
+        };
+        let color = crate::app::state::WORKSPACE_SWATCHES
+            .get(option)
+            .map(|(key, _)| (*key).to_owned());
+        self.push_endpoint_method(
+            crate::api::schema::Method::WorkspaceSetColor(
+                crate::api::schema::WorkspaceSetColorParams {
+                    workspace_id: picker.workspace_id,
+                    color,
+                },
+            ),
+            outcome,
+        );
+        outcome.repaint = true;
     }
 
     pub(super) fn save_rename_overlay(&mut self, outcome: &mut ClientShellInput) {
