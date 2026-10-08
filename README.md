@@ -3,14 +3,30 @@
 Terminal workspace manager for AI coding agents, with a sidebar you can actually
 scan. Based on herdr v0.9.3, this edition adds workspace color coding:
 
-- **Right-click a workspace → Color...**: 12 vivid swatches, mouse or keyboard
-  (arrows or j/k, then Enter), persisted across restarts.
+- **Right-click a workspace → Color...**: 12 vivid swatches. The picker opens on
+  the color the workspace shows now and previews your choice live in the sidebar.
+  Arrows or j/k then Enter, 1-9 for the first nine swatches, 0 for auto, Esc
+  cancels. Picks persist across restarts.
 - **Auto color by project**: workspaces with no manual pick get a deterministic
-  color from their directory. Same project, same color, zero setup.
+  color from their directory, and open workspaces never share one until all nine
+  auto colors are in use. Red and teal are never auto colors.
+- **Color rules**: pin colors by path in `config.toml`. A manual pick wins, then
+  the first matching rule, then auto. `herdr server reload-config` applies edits.
+
+  ```toml
+  [[ui.colors.rules]]
+  path = "~/upcomers-*"    # ~ expands; * and ? stay in one folder, ** crosses folders
+  color = "mauve"
+  ```
 - **Red name = needs you**: an agent blocked on input (permission prompt,
   question) turns the workspace name bright red until you answer.
+- **Pulse + reminder when it waits too long**: after 3 minutes blocked the name
+  pulses and herdr sends one "still waiting for you" notification (following
+  `[ui.toast] delivery`). Tune with `[ui.colors] blocked_alert_secs = 180`, 0
+  turns it off.
 - **Teal name = finished, unread**: clears itself when you open the workspace.
-- Colors also apply in the collapsed (narrow) sidebar.
+- The agents list uses each workspace's color, and colors also apply in the
+  collapsed (narrow) sidebar.
 - Scriptable: the socket method `workspace.set_color` takes a `workspace_id` and a
   swatch key (or null for auto), so plugins can color workspaces too.
 
