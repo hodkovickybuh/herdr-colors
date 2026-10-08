@@ -1,0 +1,127 @@
+name: auto-port
+
+# Daily: when herdrdev/herdr ships a new stable release, merge it into this
+# fork's default branch, run the full suite, and open a PR. Conflicts the
+# fork owns (packaging, CI, README) resolve to ours; anything else opens an
+# issue listing the files to port by hand. Merge the PR, then push tag
+# v<version>-colors to publish the release.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+env:
+  UPSTREAM: https://github.com/herdrdev/herdr
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  RUST_TOOLCHAIN_VERSION: 1.96.1
+
+jobs:
+  port:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Find a newer upstream release
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git fetch --quiet --tags "$UPSTREAM" 'refs/tags/v*:refs/tags/v*' || true
+          latest=$(git ls-remote --tags "$UPSTREAM" 'v*' | awk '{print $2}' \
+            | sed 's|refs/tags/||;s|\^{}||' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -uV | tail -1)
+          base=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD)
+          echo "upstream latest=$latest, fork base=$base"
+          branch="auto-port/$latest"
+          if [ "$latest" = "$base" ] || [ "$(printf '%s\n%s\n' "$base" "$latest" | sort -V | tail -1)" = "$base" ]; then
+            echo "up to date"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null \
+            || gh issue list --state open --search "auto-port $latest in:title" --json number -q '.[0].number' | grep -q .; then
+            echo "already handled"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          { echo "skip=false"; echo "latest=$latest"; echo "base=$base"; echo "branch=$branch"; } >> "$GITHUB_OUTPUT"
+
+      - name: Merge upstream
+        id: merge
+        if: steps.check.outputs.skip == 'false'
+        env:
+          LATEST: ${{ steps.check.outputs.latest }}
+          BRANCH: ${{ steps.check.outputs.branch }}
+        run: |
+          git config user.name "herdr-colors auto-port"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          if git merge --no-edit -m "merge: herdr $LATEST" "$LATEST"; then
+            echo "conflicts=" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Fork-owned paths: keep ours (delete what the fork deleted).
+          for f in $(git diff --name-only --diff-filter=U); do
+            case "$f" in
+              .github/*|SPONSORS.md|README.md|install.sh)
+                if git cat-file -e "HEAD:$f" 2>/dev/null; then git checkout --ours -- "$f" && git add -- "$f"
+                else git rm --quiet -- "$f"; fi ;;
+            esac
+          done
+          left=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+          echo "conflicts=$left" >> "$GITHUB_OUTPUT"
+          if [ -z "$left" ]; then git commit --no-edit; fi
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1
+        if: steps.check.outputs.skip == 'false' && steps.merge.outputs.conflicts == ''
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
+      - uses: vercel-labs/setup-zig@83c1594f26b86da8a9a8ddd9b5ee5f3af0f96943 # v1.0.2
+        if: steps.check.outputs.skip == 'false' && steps.merge.outputs.conflicts == ''
+        with:
+          version: 0.16.0
+
+      - name: Test the merge
+        id: test
+        if: steps.check.outputs.skip == 'false' && steps.merge.outputs.conflicts == ''
+        continue-on-error: true
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install cmake ninja
+          curl -LsSf https://get.nexte.st/latest/mac | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+          set +e
+          cargo nextest run --locked > test.log 2>&1
+          status=$?
+          tail -40 test.log
+          exit $status
+
+      - name: Open PR
+        if: steps.check.outputs.skip == 'false' && steps.merge.outputs.conflicts == ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST: ${{ steps.check.outputs.latest }}
+          BASE: ${{ steps.check.outputs.base }}
+          BRANCH: ${{ steps.check.outputs.branch }}
+          TESTS: ${{ steps.test.outcome }}
+        run: |
+          git push --quiet origin "$BRANCH"
+          summary=$(grep 'Summary' test.log | tail -1 || echo "no summary")
+          if [ "$TESTS" = "success" ]; then verdict="Tests pass: $summary"; draft=""
+          else verdict="TESTS FAIL: $summary. Fix on this branch before merging."; draft="--draft"; fi
+          gh pr create $draft --base "${{ github.event.repository.default_branch }}" --head "$BRANCH" \
+            --title "auto-port: herdr $LATEST" \
+            --body "$(printf 'Merges upstream herdr %s (fork was on %s).\n\n%s\n\nAfter merging, publish with:\n\n    git tag -a %s-colors -m \"herdr-colors on herdr %s\" && git push origin %s-colors\n' \
+              "$LATEST" "$BASE" "$verdict" "$LATEST" "$LATEST" "$LATEST")"
+
+      - name: Open issue for manual port
+        if: steps.check.outputs.skip == 'false' && steps.merge.outputs.conflicts != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST: ${{ steps.check.outputs.latest }}
+          BASE: ${{ steps.check.outputs.base }}
+          CONFLICTS: ${{ steps.merge.outputs.conflicts }}
+        run: |
+          gh issue create --title "auto-port $LATEST needs a manual port" \
+            --body "$(printf 'Merging upstream herdr %s into the fork (on %s) conflicts in:\n\n%s\n\nPort the color changes by hand (see the port notes in README), then tag %s-colors.\n' \
+              "$LATEST" "$BASE" "$(echo "$CONFLICTS" | tr ' ' '\n' | sed '/^$/d;s/^/- /')" "$LATEST")"
