@@ -27,7 +27,12 @@ jobs:
       - run: HOMEBREW_NO_AUTO_UPDATE=1 brew install cmake ninja
       # Upstream runs its suite under nextest (process per test); plain
       # `cargo test` aborts on a SIGPIPE from one upstream test.
-      - run: curl -LsSf https://get.nexte.st/latest/mac | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+      # The runner image no longer guarantees $CARGO_HOME/bin exists or is on PATH.
+      - run: |
+          bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          mkdir -p "$bin"
+          curl -LsSf https://get.nexte.st/latest/mac | tar zxf - -C "$bin"
+          echo "$bin" >> "$GITHUB_PATH"
       - run: cargo nextest run --locked
 
   build:

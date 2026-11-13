@@ -89,7 +89,10 @@ jobs:
         continue-on-error: true
         run: |
           HOMEBREW_NO_AUTO_UPDATE=1 brew install cmake ninja
-          curl -LsSf https://get.nexte.st/latest/mac | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
+          bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          mkdir -p "$bin"
+          curl -LsSf https://get.nexte.st/latest/mac | tar zxf - -C "$bin"
+          export PATH="$bin:$PATH"
           set +e
           cargo nextest run --locked > test.log 2>&1
           status=$?
