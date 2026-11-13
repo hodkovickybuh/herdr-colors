@@ -1085,10 +1085,14 @@ pub struct ClientShellTab {
     pub custom_label: bool,
     pub zoomed: bool,
     pub focused: bool,
-    /// User-picked swatch key; None = uncolored. Defaulted (not skipped) so the
-    /// JSON endpoint stays additive and bincode keeps a fixed field layout.
+    /// Effective swatch key: the manual pick, else the automatic per-tab color.
+    /// Defaulted (not skipped) so the JSON endpoint stays additive and bincode
+    /// keeps a fixed field layout.
     #[serde(default)]
     pub color: Option<String>,
+    /// Whether `color` is a manual pick rather than the automatic one.
+    #[serde(default)]
+    pub custom_color: bool,
     #[serde(deserialize_with = "deserialize_client_shell_agent_status")]
     pub agent_status: crate::api::schema::AgentStatus,
 }
@@ -2882,6 +2886,7 @@ mod tests {
             }],
             tabs: vec![ClientShellTab {
                 color: None,
+                custom_color: false,
                 tab_id: "w1:t1".into(),
                 workspace_id: "w1".into(),
                 number: 1,

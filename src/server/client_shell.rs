@@ -108,7 +108,7 @@ pub(super) fn snapshot_with_completions(
             }
         })
         .collect();
-    let tabs = snapshot
+    let tab_pairs = snapshot
         .tabs
         .into_iter()
         .zip(
@@ -117,7 +117,22 @@ pub(super) fn snapshot_with_completions(
                 .iter()
                 .flat_map(|workspace| workspace.tabs.iter()),
         )
-        .map(|(tab, state)| {
+        .collect::<Vec<_>>();
+    // Auto colors are resolved among the tabs of one workspace at a time.
+    let tab_colors = tab_pairs
+        .chunk_by(|(a, _), (b, _)| a.workspace_id == b.workspace_id)
+        .flat_map(|siblings| {
+            crate::app::state::resolve_tab_colors(
+                siblings
+                    .iter()
+                    .map(|(tab, state)| (tab.tab_id.as_str(), state.color.as_deref())),
+            )
+        })
+        .collect::<Vec<_>>();
+    let tabs = tab_pairs
+        .into_iter()
+        .zip(tab_colors)
+        .map(|((tab, state), color)| {
             let tab_id = tab.tab_id;
             protocol::ClientShellTab {
                 focused: focused_tab_id.as_deref() == Some(tab_id.as_str()),
@@ -126,7 +141,8 @@ pub(super) fn snapshot_with_completions(
                 number: tab.number,
                 label: tab.label,
                 custom_label: !state.is_auto_named(),
-                color: state.color.clone(),
+                color: Some(color),
+                custom_color: state.color.is_some(),
                 zoomed: state.zoomed,
                 agent_status: tab.agent_status,
             }

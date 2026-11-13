@@ -967,9 +967,12 @@ impl ClientShellState {
             picker.and_then(|picker| Some((picker, picker.tab_id.as_deref()?)))
         {
             if let Some(tab) = snapshot.tabs.iter_mut().find(|tab| tab.tab_id == tab_id) {
-                tab.color = crate::app::state::WORKSPACE_SWATCHES
-                    .get(picker.selected)
-                    .map(|(key, _)| (*key).to_owned());
+                match crate::app::state::WORKSPACE_SWATCHES.get(picker.selected) {
+                    Some((key, _)) => tab.color = Some((*key).to_owned()),
+                    // The auto color behind a manual pick is server-side; show none.
+                    None if tab.custom_color => tab.color = None,
+                    None => {}
+                }
             }
         }
         for workspace in &mut snapshot.workspaces {

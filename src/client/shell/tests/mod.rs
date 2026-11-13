@@ -46,6 +46,7 @@ pub(super) fn snapshot() -> ClientShellSnapshot {
         }],
         tabs: vec![ClientShellTab {
             color: None,
+            custom_color: false,
             tab_id: "tab_1".into(),
             workspace_id: "ws_1".into(),
             number: 1,

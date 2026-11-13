@@ -119,11 +119,57 @@ pub(crate) fn auto_workspace_color_key(cwd: &std::path::Path) -> &'static str {
 }
 
 fn auto_slot(cwd: &std::path::Path) -> usize {
+    auto_slot_for(cwd.as_os_str().as_encoded_bytes())
+}
+
+fn auto_slot_for(bytes: &[u8]) -> usize {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in cwd.as_os_str().as_encoded_bytes() {
+    for b in bytes {
         h = (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01b3);
     }
     (h % AUTO_SWATCHES.len() as u64) as usize
+}
+
+/// Auto colors for one workspace's tabs, in tab order: a tab without a manual
+/// pick starts from a slot derived from its stable id and takes the least-used
+/// swatch among its siblings, so neighbors stay distinct until all nine auto
+/// colors are in use. Manual picks are returned unchanged and reserve theirs.
+// ponytail: closing a tab can shift a later one that had probed past it.
+pub(crate) fn resolve_tab_colors<'a>(
+    tabs: impl IntoIterator<Item = (&'a str, Option<&'a str>)>,
+) -> Vec<String> {
+    assign_auto_colors(
+        tabs.into_iter()
+            .map(|(tab_id, manual)| (auto_slot_for(tab_id.as_bytes()), manual))
+            .collect(),
+    )
+}
+
+/// Shared by workspaces and tabs: `(preferred auto slot, fixed color)` in
+/// display order. Fixed colors pass through and count as used; the rest take
+/// the least-used auto swatch, probing from their preferred slot.
+fn assign_auto_colors(items: Vec<(usize, Option<&str>)>) -> Vec<String> {
+    let mut used: std::collections::HashMap<&str, usize> = items
+        .iter()
+        .filter_map(|(_, fixed)| *fixed)
+        .fold(Default::default(), |mut m, k| {
+            *m.entry(k).or_default() += 1;
+            m
+        });
+    items
+        .iter()
+        .map(|(start, fixed)| {
+            if let Some(key) = fixed {
+                return (*key).to_owned();
+            }
+            let fewest = (0..AUTO_SWATCHES.len())
+                .map(|i| AUTO_SWATCHES[(start + i) % AUTO_SWATCHES.len()])
+                .min_by_key(|k| used.get(k).copied().unwrap_or(0))
+                .unwrap_or(AUTO_SWATCHES[*start]);
+            *used.entry(fewest).or_default() += 1;
+            fewest.to_owned()
+        })
+        .collect()
 }
 
 /// Auto colors for a whole sidebar, in workspace order: each workspace without
@@ -136,41 +182,21 @@ pub(crate) fn resolve_workspace_colors<'a>(
     rules: &[(regex::Regex, &'static str)],
 ) -> Vec<String> {
     // A manual pick wins, then the first matching config rule; both are fixed.
-    let workspaces: Vec<_> = workspaces
-        .into_iter()
-        .map(|(cwd, manual)| {
-            let fixed = manual.or_else(|| {
-                let path = cwd.to_string_lossy();
-                rules
-                    .iter()
-                    .find(|(glob, _)| glob.is_match(&path))
-                    .map(|(_, key)| *key)
-            });
-            (cwd, fixed)
-        })
-        .collect();
-    let mut used: std::collections::HashMap<&str, usize> = workspaces
-        .iter()
-        .filter_map(|(_, manual)| *manual)
-        .fold(Default::default(), |mut m, k| {
-            *m.entry(k).or_default() += 1;
-            m
-        });
-    workspaces
-        .iter()
-        .map(|(cwd, manual)| {
-            if let Some(key) = manual {
-                return (*key).to_owned();
-            }
-            let start = auto_slot(cwd);
-            let fewest = (0..AUTO_SWATCHES.len())
-                .map(|i| AUTO_SWATCHES[(start + i) % AUTO_SWATCHES.len()])
-                .min_by_key(|k| used.get(k).copied().unwrap_or(0))
-                .unwrap_or(AUTO_SWATCHES[start]);
-            *used.entry(fewest).or_default() += 1;
-            fewest.to_owned()
-        })
-        .collect()
+    assign_auto_colors(
+        workspaces
+            .into_iter()
+            .map(|(cwd, manual)| {
+                let fixed = manual.or_else(|| {
+                    let path = cwd.to_string_lossy();
+                    rules
+                        .iter()
+                        .find(|(glob, _)| glob.is_match(&path))
+                        .map(|(_, key)| *key)
+                });
+                (auto_slot(cwd), fixed)
+            })
+            .collect(),
+    )
 }
 
 impl Palette {
@@ -1429,6 +1455,34 @@ mod tests {
         // Pinned value: changing the hash would silently recolor every workspace.
         assert_eq!(key, EXPECTED_AUTO_KEY);
         assert_eq!(super::workspace_swatch_color("not-a-swatch"), None);
+    }
+
+    #[test]
+    fn auto_tab_colors_are_stable_distinct_and_respect_manual_picks() {
+        let ids: Vec<String> = (1..=9).map(|n| format!("w1:t{n}")).collect();
+        let mut input: Vec<(&str, Option<&str>)> =
+            ids.iter().map(|id| (id.as_str(), None)).collect();
+        input[2].1 = Some("red");
+        input[4].1 = Some("mauve");
+        let colors = super::resolve_tab_colors(input.clone());
+        // Same tabs, same colors, every time.
+        assert_eq!(colors, super::resolve_tab_colors(input));
+        assert_eq!((colors[2].as_str(), colors[4].as_str()), ("red", "mauve"));
+        // Auto colors never read as a status and never repeat a sibling while
+        // free swatches remain (9 tabs, mauve taken: 8 auto tabs, 8 free).
+        let auto: Vec<&String> = colors
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| ![2, 4].contains(i))
+            .map(|(_, color)| color)
+            .collect();
+        assert!(auto
+            .iter()
+            .all(|color| !["red", "maroon", "teal", "mauve"].contains(&color.as_str())));
+        let mut unique = auto.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), auto.len());
     }
 
     #[test]

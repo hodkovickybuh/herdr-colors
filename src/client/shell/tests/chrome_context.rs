@@ -5,6 +5,7 @@ fn tab_overflow_controls_scroll_the_client_owned_tab_bar() {
     let mut snapshot = snapshot();
     snapshot.tabs.extend((2..=8).map(|number| ClientShellTab {
         color: None,
+        custom_color: false,
         tab_id: format!("tab_{number}"),
         workspace_id: "ws_1".into(),
         number,
@@ -65,6 +66,7 @@ fn focused_last_overflow_tab_shows_its_full_label() {
         .enumerate()
         .map(|(index, label)| ClientShellTab {
             color: None,
+            custom_color: false,
             tab_id: format!("tab_{}", index + 1),
             workspace_id: "ws_1".into(),
             number: index + 1,
@@ -763,6 +765,7 @@ fn tab_color_picker_sets_color_and_tab_bar_shows_color_and_status() {
     projected.tabs[0].label = "main".into();
     projected.tabs.push(ClientShellTab {
         color: None,
+        custom_color: false,
         tab_id: "tab_2".into(),
         workspace_id: "ws_1".into(),
         number: 2,
@@ -777,7 +780,7 @@ fn tab_color_picker_sets_color_and_tab_bar_shows_color_and_status() {
     state.set_pane_surface(surface());
     state.compose(106, 20).expect("composed frame");
 
-    // Right-click the second tab, pick Color...: opens on "none".
+    // Right-click the second tab, pick Color...: opens on "auto".
     state.open_tab_context_menu("tab_2".into(), 30, 1);
     state.compose(106, 20).expect("tab context menu");
     let color_row = state.hits.context_menu_rows[2].0;
@@ -807,7 +810,7 @@ fn tab_color_picker_sets_color_and_tab_bar_shows_color_and_status() {
         .iter()
         .map(|cell| cell.symbol.as_str())
         .collect::<String>();
-    assert!(text.contains("tab color") && text.contains("none (current)"));
+    assert!(text.contains("tab color") && text.contains("auto (current)"));
 
     // Enter applies over the API as tab.set_color, not workspace.set_color.
     let apply = state.handle_input_bytes(b"\r");

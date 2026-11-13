@@ -1317,11 +1317,10 @@ fn render_workspace_color_overlay(
         auto.x + 2,
         auto.y,
         auto.width.saturating_sub(2),
-        match (v.tab_id.is_some(), current.is_none()) {
-            (false, true) => " auto (current)",
-            (false, false) => " auto (clear pick)",
-            (true, true) => " none (current)",
-            (true, false) => " none (clear color)",
+        if current.is_none() {
+            " auto (current)"
+        } else {
+            " auto (clear pick)"
         },
         auto_style,
     );

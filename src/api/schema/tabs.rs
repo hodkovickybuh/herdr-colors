@@ -34,7 +34,8 @@ pub struct TabRenameParams {
 pub struct TabSetColorParams {
     pub tab_id: String,
     /// Swatch key (red, maroon, peach, yellow, green, teal, sky, blue,
-    /// sapphire, mauve, pink, lavender). Omit or null to clear the color.
+    /// sapphire, mauve, pink, lavender). Omit or null to return to the
+    /// automatic per-tab color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
 }

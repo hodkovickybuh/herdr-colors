@@ -37,7 +37,7 @@ enum SplitCommand<'a> {
 
 pub struct Tab {
     pub custom_name: Option<String>,
-    /// User-picked tab swatch key (see `WORKSPACE_SWATCHES`). None = uncolored.
+    /// User-picked tab swatch key (see `WORKSPACE_SWATCHES`). None = auto color.
     pub color: Option<String>,
     pub number: usize,
     /// Identity source for this tab's pane tree.

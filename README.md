@@ -29,14 +29,15 @@ scan. Based on herdr v0.9.3, this edition adds workspace color coding:
   collapsed (narrow) sidebar.
 - **Tab colors**: right-click a tab → Color... for the same picker (live
   preview, digits, Esc). A colored tab shows its name in that color, and the
-  focused tab uses it as its background. Tabs have no auto color: 0 clears.
+  focused tab uses it as its background. Tabs without a pick get an automatic
+  color that stays distinct from their neighbors; 0 returns to auto.
 - **Tab status at a glance**: every tab running an agent leads with a status
   icon (working, waiting on you, finished unread, idle), following
   `[ui] status_indicators`. A tab waiting on you turns red and pulses with its
   workspace, a finished unread tab turns teal, both over the picked color.
 - Scriptable: the socket method `workspace.set_color` takes a `workspace_id` and a
   swatch key (or null for auto), so plugins can color workspaces too.
-  `tab.set_color` does the same for a `tab_id` (null clears).
+  `tab.set_color` does the same for a `tab_id` (null for auto).
 
 ## Install (macOS / Linux)
 

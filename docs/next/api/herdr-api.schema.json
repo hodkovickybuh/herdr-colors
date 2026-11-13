@@ -4349,7 +4349,7 @@
         "TabSetColorParams": {
           "properties": {
             "color": {
-              "description": "Swatch key (red, maroon, peach, yellow, green, teal, sky, blue,\nsapphire, mauve, pink, lavender). Omit or null to clear the color.",
+              "description": "Swatch key (red, maroon, peach, yellow, green, teal, sky, blue,\nsapphire, mauve, pink, lavender). Omit or null to return to the\nautomatic per-tab color.",
               "type": [
                 "string",
                 "null"

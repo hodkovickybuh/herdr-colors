@@ -391,14 +391,17 @@ impl ClientShellState {
                 }
             }
             ClientContextMenuAction::Color => {
-                let pick = self
+                let tab = self
                     .snapshot
                     .as_deref()
-                    .and_then(|snapshot| snapshot.tabs.iter().find(|tab| tab.tab_id == tab_id))
+                    .and_then(|snapshot| snapshot.tabs.iter().find(|tab| tab.tab_id == tab_id));
+                // Start on the swatch the tab shows now (pick or auto).
+                let shown = tab.and_then(|tab| tab.color.clone());
+                let pick = tab
+                    .filter(|tab| tab.custom_color)
                     .and_then(|tab| tab.color.clone());
                 let swatches = crate::app::state::WORKSPACE_SWATCHES;
-                let selected = pick
-                    .as_deref()
+                let selected = shown
                     .and_then(|key| swatches.iter().position(|(k, _)| *k == key))
                     .unwrap_or(swatches.len());
                 self.overlay = Some(ClientShellOverlay::WorkspaceColor(
