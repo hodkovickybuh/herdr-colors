@@ -89,6 +89,8 @@ struct LegacyWorkspaceSnapshot {
 pub struct TabSnapshot {
     #[serde(default)]
     pub custom_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     pub layout: LayoutSnapshot,
     pub panes: HashMap<u32, PaneSnapshot>,
     pub zoomed: bool,
@@ -158,6 +160,7 @@ impl From<LegacyWorkspaceSnapshot> for WorkspaceSnapshot {
     fn from(snap: LegacyWorkspaceSnapshot) -> Self {
         let identity_cwd = legacy_identity_cwd(&snap);
         let tab = TabSnapshot {
+            color: None,
             custom_name: None,
             layout: snap.layout,
             panes: snap.panes,
@@ -396,6 +399,7 @@ fn capture_tab(
         );
     }
     TabSnapshot {
+        color: tab.color.clone(),
         custom_name: tab.custom_name.clone(),
         layout: capture_node(tab.layout.root()),
         panes,
@@ -738,6 +742,7 @@ mod tests {
                 public_tab_numbers: vec![1],
                 next_public_tab_number: 2,
                 tabs: vec![TabSnapshot {
+                    color: None,
                     custom_name: Some("api".to_string()),
                     layout: LayoutSnapshot::Split {
                         direction: DirectionSnapshot::Horizontal,
@@ -920,19 +925,26 @@ mod tests {
     fn workspace_color_round_trips_through_snapshot() {
         let mut state = state_with_workspaces(&["colored", "plain"]);
         state.workspaces[0].set_color(Some("mauve".to_string()));
+        state.workspaces[0].tabs[0].set_color(Some("sky".to_string()));
 
         let snap = capture_from_state(&state);
         assert_eq!(snap.workspaces[0].color.as_deref(), Some("mauve"));
         assert_eq!(snap.workspaces[1].color, None);
+        assert_eq!(snap.workspaces[0].tabs[0].color.as_deref(), Some("sky"));
 
         let json = serde_json::to_string(&snap).unwrap();
         assert!(json.contains("\"color\":\"mauve\""));
         // unset colors stay out of the JSON entirely
-        assert_eq!(json.matches("\"color\"").count(), 1);
+        assert_eq!(json.matches("\"color\"").count(), 2);
 
         let restored = parse_snapshot(&json).unwrap();
         assert_eq!(restored.workspaces[0].color.as_deref(), Some("mauve"));
         assert_eq!(restored.workspaces[1].color, None);
+        assert_eq!(restored.workspaces[0].tabs[0].color.as_deref(), Some("sky"));
+        assert!(restored.workspaces[1]
+            .tabs
+            .iter()
+            .all(|tab| tab.color.is_none()));
 
         // Snapshots written before the color field existed still load.
         let old = parse_snapshot(session_fixture("current-herdr")).unwrap();
@@ -1464,6 +1476,7 @@ mod tests {
                 public_tab_numbers: Vec::new(),
                 next_public_tab_number: 0,
                 tabs: vec![TabSnapshot {
+                    color: None,
                     custom_name: None,
                     layout: LayoutSnapshot::Split {
                         direction: DirectionSnapshot::Horizontal,

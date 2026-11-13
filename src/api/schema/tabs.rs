@@ -31,6 +31,15 @@ pub struct TabRenameParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TabSetColorParams {
+    pub tab_id: String,
+    /// Swatch key (red, maroon, peach, yellow, green, teal, sky, blue,
+    /// sapphire, mauve, pink, lavender). Omit or null to clear the color.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TabMoveParams {
     pub tab_id: String,
     pub insert_index: usize,

@@ -51,6 +51,7 @@ impl ClientContextMenuOverlay {
             ClientContextMenuTarget::Tab { .. } => vec![
                 item("New tab", Action::NewTab),
                 item("Rename", Action::Rename),
+                item("Color...", Action::Color),
                 item("Close", Action::Close),
             ],
             ClientContextMenuTarget::Pane {
@@ -271,6 +272,7 @@ impl ClientShellState {
                 self.overlay = Some(ClientShellOverlay::WorkspaceColor(
                     ClientWorkspaceColorOverlay {
                         workspace_id,
+                        tab_id: None,
                         selected,
                         pick,
                     },
@@ -387,6 +389,26 @@ impl ClientShellState {
                         },
                     }));
                 }
+            }
+            ClientContextMenuAction::Color => {
+                let pick = self
+                    .snapshot
+                    .as_deref()
+                    .and_then(|snapshot| snapshot.tabs.iter().find(|tab| tab.tab_id == tab_id))
+                    .and_then(|tab| tab.color.clone());
+                let swatches = crate::app::state::WORKSPACE_SWATCHES;
+                let selected = pick
+                    .as_deref()
+                    .and_then(|key| swatches.iter().position(|(k, _)| *k == key))
+                    .unwrap_or(swatches.len());
+                self.overlay = Some(ClientShellOverlay::WorkspaceColor(
+                    ClientWorkspaceColorOverlay {
+                        workspace_id,
+                        tab_id: Some(tab_id),
+                        selected,
+                        pick,
+                    },
+                ));
             }
             ClientContextMenuAction::Close => {
                 self.request_tab_close(tab_id, outcome);

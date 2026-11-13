@@ -1080,6 +1080,9 @@ impl App {
             Method::TabCreate(params) => return self.handle_tab_create(request.id, params),
             Method::TabFocus(target) => return self.handle_tab_focus(request.id, target),
             Method::TabRename(params) => return self.handle_tab_rename(request.id, params),
+            Method::TabSetColor(params) => {
+                return self.handle_tab_set_color(request.id, params);
+            }
             Method::TabMove(params) => return self.handle_tab_move(request.id, params),
             Method::TabClose(target) => return self.handle_tab_close(request.id, target),
             Method::AgentList(_) => return self.handle_agent_list(request.id),
@@ -1489,6 +1492,45 @@ mod tests {
         assert_eq!(app.state.workspaces[0].color.as_deref(), Some("teal"));
         assert!(set(&mut app, None)["error"].is_null());
         assert_eq!(app.state.workspaces[0].color, None);
+    }
+
+    #[test]
+    fn tab_set_color_validates_swatch_and_clears() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &crate::config::Config::default(),
+            crate::app::AppPolicy::TEST,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.state.workspaces = vec![crate::workspace::Workspace::test_new("one")];
+        app.state.ensure_test_terminals();
+        let tab_id = app.public_tab_id(0, 0).unwrap();
+        let set = |app: &mut App, color: Option<&str>| {
+            let response = app.handle_api_request(crate::api::schema::Request {
+                id: "color".into(),
+                method: crate::api::schema::Method::TabSetColor(
+                    crate::api::schema::TabSetColorParams {
+                        tab_id: tab_id.clone(),
+                        color: color.map(str::to_owned),
+                    },
+                ),
+            });
+            serde_json::from_str::<serde_json::Value>(&response).unwrap()
+        };
+
+        assert!(set(&mut app, Some("teal"))["error"].is_null());
+        assert_eq!(
+            set(&mut app, Some("chartreuse"))["error"]["code"],
+            "invalid_params"
+        );
+        assert_eq!(
+            app.state.workspaces[0].tabs[0].color.as_deref(),
+            Some("teal")
+        );
+        assert!(set(&mut app, None)["error"].is_null());
+        assert_eq!(app.state.workspaces[0].tabs[0].color, None);
     }
 
     #[test]

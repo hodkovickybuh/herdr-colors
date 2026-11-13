@@ -584,6 +584,8 @@ pub(super) struct ClientConfirmCloseOverlay {
 #[derive(Debug)]
 pub(super) struct ClientWorkspaceColorOverlay {
     pub(super) workspace_id: String,
+    /// Some = the picker colors this tab instead of the workspace.
+    pub(super) tab_id: Option<String>,
     /// Highlighted option: 0..12 swatches, 12 = auto (clear the manual pick).
     pub(super) selected: usize,
     /// The manual pick when the picker opened (None = auto or rule).

@@ -43,6 +43,7 @@ const CLIENT_SHELL_METHODS: &[&str] = &[
     "tab.focus",
     "tab.move",
     "tab.rename",
+    "tab.set_color",
     "workspace.close",
     "workspace.create",
     "workspace.focus",
@@ -298,6 +299,11 @@ mod tests {
         assert_eq!(
             actual.remove("workspace.set_color").as_deref(),
             Some("c98bdc839482214b1402898745bccd97cbcf0e2911643cb932802be98a9229cc")
+        );
+        // herdr-colors: the tab bar Color... picker sends this.
+        assert_eq!(
+            actual.remove("tab.set_color").as_deref(),
+            Some("3a29631339aa13fca8a9934f9bdf109a8e2df55de03b24ec921d321885f60a59")
         );
         assert_eq!(
             actual.remove("pane.link.resolve").as_deref(),

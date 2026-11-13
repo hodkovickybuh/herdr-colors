@@ -42,6 +42,7 @@ pub(crate) fn request_changes_ui(request: &Request) -> bool {
             | Method::TabCreate(_)
             | Method::TabFocus(_)
             | Method::TabRename(_)
+            | Method::TabSetColor(_)
             | Method::TabMove(_)
             | Method::TabClose(_)
             | Method::LayoutApply(_)

@@ -4,6 +4,7 @@ use super::*;
 fn tab_overflow_controls_scroll_the_client_owned_tab_bar() {
     let mut snapshot = snapshot();
     snapshot.tabs.extend((2..=8).map(|number| ClientShellTab {
+        color: None,
         tab_id: format!("tab_{number}"),
         workspace_id: "ws_1".into(),
         number,
@@ -63,6 +64,7 @@ fn focused_last_overflow_tab_shows_its_full_label() {
         .iter()
         .enumerate()
         .map(|(index, label)| ClientShellTab {
+            color: None,
             tab_id: format!("tab_{}", index + 1),
             workspace_id: "ws_1".into(),
             number: index + 1,
@@ -724,4 +726,138 @@ fn long_blocked_workspace_name_pulses_and_repaints_only_on_phase_flips() {
     state.set_pane_surface(idle_surface);
     assert!(!state.tick_blocked_pulse(ms(6_600)));
     assert!(state.blocked_since.is_empty() && state.long_blocked.is_empty());
+}
+
+#[test]
+fn tab_color_picker_sets_color_and_tab_bar_shows_color_and_status() {
+    // Cell of the tab's first label letter, plus the cell two to its left
+    // (where a status icon sits).
+    fn label_cells(
+        state: &mut ClientShellState,
+        tab_id: &str,
+        letter: &str,
+    ) -> (ratatui::buffer::Cell, ratatui::buffer::Cell) {
+        let frame = state.compose(106, 20).expect("frame");
+        let rect = state
+            .hits
+            .tabs
+            .iter()
+            .find(|(_, id)| id == tab_id)
+            .expect("tab hit")
+            .0;
+        let buffer = frame.to_ratatui_buffer().expect("buffer");
+        let x = (rect.x..rect.right())
+            .find(|x| buffer[(*x, rect.y)].symbol() == letter)
+            .expect("tab label");
+        (buffer[(x, rect.y)].clone(), buffer[(x - 2, rect.y)].clone())
+    }
+    fn show(state: &mut ClientShellState, update: &mut ClientShellSnapshot) {
+        update.revision += 1;
+        let mut updated_surface = surface();
+        updated_surface.projection_revision = update.revision;
+        state.set_snapshot(Box::new(update.clone()));
+        state.set_pane_surface(updated_surface);
+    }
+    let swatch = |key| crate::app::state::workspace_swatch_color(key).unwrap();
+    let mut projected = snapshot();
+    projected.tabs[0].label = "main".into();
+    projected.tabs.push(ClientShellTab {
+        color: None,
+        tab_id: "tab_2".into(),
+        workspace_id: "ws_1".into(),
+        number: 2,
+        label: "side".into(),
+        custom_label: true,
+        zoomed: false,
+        focused: false,
+        agent_status: AgentStatus::Unknown,
+    });
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected.clone()));
+    state.set_pane_surface(surface());
+    state.compose(106, 20).expect("composed frame");
+
+    // Right-click the second tab, pick Color...: opens on "none".
+    state.open_tab_context_menu("tab_2".into(), 30, 1);
+    state.compose(106, 20).expect("tab context menu");
+    let color_row = state.hits.context_menu_rows[2].0;
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: color_row.x + 1,
+        row: color_row.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    let swatches = crate::app::state::WORKSPACE_SWATCHES.len();
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::WorkspaceColor(ClientWorkspaceColorOverlay {
+            ref tab_id,
+            selected,
+            ..
+        })) if tab_id.as_deref() == Some("tab_2") && selected == swatches
+    ));
+
+    // Arrowing previews the swatch live on the tab.
+    assert!(state.handle_input_bytes(b"j").actions.is_empty());
+    assert_eq!(label_cells(&mut state, "tab_2", "s").0.fg, swatch("red"));
+    let text = state
+        .compose(106, 20)
+        .expect("picker")
+        .cells
+        .iter()
+        .map(|cell| cell.symbol.as_str())
+        .collect::<String>();
+    assert!(text.contains("tab color") && text.contains("none (current)"));
+
+    // Enter applies over the API as tab.set_color, not workspace.set_color.
+    let apply = state.handle_input_bytes(b"\r");
+    let set_color = apply
+        .actions
+        .iter()
+        .find_map(|action| match action {
+            ClientShellAction::Endpoint { request, .. } => match &request.method {
+                crate::api::schema::Method::TabSetColor(params) => Some(params.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("tab color pick should use endpoint API");
+    assert_eq!(set_color.tab_id, "tab_2");
+    assert_eq!(set_color.color.as_deref(), Some("red"));
+    assert!(state.overlay.is_none());
+
+    // Unfocused colored tab: colored label, and no status icon for a plain
+    // shell tab.
+    projected.tabs[1].color = Some("mauve".into());
+    show(&mut state, &mut projected);
+    let (label, lead) = label_cells(&mut state, "tab_2", "s");
+    assert_eq!(label.fg, swatch("mauve"));
+    assert_eq!(lead.symbol(), " ");
+
+    // A working agent adds a status icon in its own status color.
+    projected.tabs[1].agent_status = AgentStatus::Working;
+    show(&mut state, &mut projected);
+    let (label, lead) = label_cells(&mut state, "tab_2", "s");
+    assert_eq!(label.fg, swatch("mauve"));
+    assert_eq!(lead.symbol(), "●");
+    assert_eq!(lead.fg, state.config.palette.yellow);
+
+    // Waiting on the user beats the picked color; finished-unseen turns teal.
+    projected.tabs[1].agent_status = AgentStatus::Blocked;
+    show(&mut state, &mut projected);
+    assert_eq!(
+        label_cells(&mut state, "tab_2", "s").0.fg,
+        crate::app::state::ATTENTION_RED
+    );
+    projected.tabs[1].agent_status = AgentStatus::Done;
+    show(&mut state, &mut projected);
+    assert_eq!(
+        label_cells(&mut state, "tab_2", "s").0.fg,
+        state.config.palette.teal
+    );
+
+    // The focused tab uses its color as the background.
+    projected.tabs[0].color = Some("sky".into());
+    show(&mut state, &mut projected);
+    assert_eq!(label_cells(&mut state, "tab_1", "m").0.bg, swatch("sky"));
 }

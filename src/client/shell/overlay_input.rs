@@ -963,12 +963,21 @@ impl ClientShellState {
             return None;
         }
         let mut snapshot = self.snapshot.as_deref()?.clone();
+        if let Some((picker, tab_id)) =
+            picker.and_then(|picker| Some((picker, picker.tab_id.as_deref()?)))
+        {
+            if let Some(tab) = snapshot.tabs.iter_mut().find(|tab| tab.tab_id == tab_id) {
+                tab.color = crate::app::state::WORKSPACE_SWATCHES
+                    .get(picker.selected)
+                    .map(|(key, _)| (*key).to_owned());
+            }
+        }
         for workspace in &mut snapshot.workspaces {
             workspace.blocked_dim =
                 self.blocked_pulse_dim && self.long_blocked.contains(&workspace.workspace_id);
-            let Some(picker) =
-                picker.filter(|picker| picker.workspace_id == workspace.workspace_id)
-            else {
+            let Some(picker) = picker.filter(|picker| {
+                picker.tab_id.is_none() && picker.workspace_id == workspace.workspace_id
+            }) else {
                 continue;
             };
             match crate::app::state::WORKSPACE_SWATCHES.get(picker.selected) {
@@ -994,15 +1003,21 @@ impl ClientShellState {
         let color = crate::app::state::WORKSPACE_SWATCHES
             .get(option)
             .map(|(key, _)| (*key).to_owned());
-        self.push_endpoint_method(
-            crate::api::schema::Method::WorkspaceSetColor(
+        let method = match picker.tab_id {
+            Some(tab_id) => {
+                crate::api::schema::Method::TabSetColor(crate::api::schema::TabSetColorParams {
+                    tab_id,
+                    color,
+                })
+            }
+            None => crate::api::schema::Method::WorkspaceSetColor(
                 crate::api::schema::WorkspaceSetColorParams {
                     workspace_id: picker.workspace_id,
                     color,
                 },
             ),
-            outcome,
-        );
+        };
+        self.push_endpoint_method(method, outcome);
         outcome.repaint = true;
     }
 

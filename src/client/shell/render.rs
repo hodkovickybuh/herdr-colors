@@ -318,6 +318,11 @@ pub(super) fn render_shell(
             state.tab_scroll,
             state.reveal_focused_tab,
             state.tab_drag_insert_index,
+            state
+                .endpoints
+                .iter()
+                .find(|endpoint| endpoint.endpoint_id == *state.active_endpoint_id)
+                .is_none_or(|endpoint| endpoint.status == ClientEndpointStatus::Online),
             &mut hits,
         );
     }

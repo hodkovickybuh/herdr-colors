@@ -12,8 +12,17 @@ pub(crate) fn render_tab_bar(
     tab_scroll: &mut usize,
     reveal_focused_tab: &mut bool,
     tab_drag_insert_index: Option<usize>,
+    // False while the active machine is not online: its last-known agent
+    // states are stale, so tabs show neither status icons nor status colors.
+    live: bool,
     hits: &mut ShellHitMap,
 ) {
+    let indicators = live.then_some(config.status_indicators);
+    // The long-block pulse is tracked per workspace; blocked tabs follow it.
+    let blocked_dim = snapshot.workspaces.iter().any(|workspace| {
+        workspace.blocked_dim
+            && Some(workspace.workspace_id.as_str()) == snapshot.focused_workspace_id.as_deref()
+    });
     let palette = &config.palette;
     buffer.set_style(area, Style::default().bg(palette.panel_bg));
     let tabs = snapshot
@@ -100,15 +109,18 @@ pub(crate) fn render_tab_bar(
             break;
         }
         let rect = Rect::new(x, area.y, width, 1);
+        let color = tab_color(tab, live, blocked_dim, palette);
         let style = if tab.focused {
             let base = Style::default()
                 .fg(panel_contrast_fg(palette))
-                .bg(palette.accent);
+                .bg(color.unwrap_or(palette.accent));
             if tab.custom_label {
                 base.add_modifier(Modifier::BOLD)
             } else {
                 base
             }
+        } else if let Some(color) = color {
+            Style::default().fg(color).bg(palette.surface0)
         } else if tab.custom_label {
             Style::default().fg(palette.overlay1).bg(palette.surface0)
         } else {
@@ -123,6 +135,19 @@ pub(crate) fn render_tab_bar(
             right_padding = padding.saturating_sub(left) as usize,
         );
         put_text(buffer, rect.x, rect.y, rect.width, &text, style);
+        // The status icon sits in the tab's own left padding, so tab widths
+        // and the strip layout stay exactly as they are without it. Unfocused
+        // it keeps its status color; focused it follows the label for contrast.
+        if left >= 2 {
+            if let Some(icon) = tab_status_icon(tab, indicators) {
+                let icon_style = if tab.focused {
+                    style
+                } else {
+                    style.fg(status_color(tab.agent_status, palette))
+                };
+                put_text(buffer, rect.x + left - 2, rect.y, 1, icon, icon_style);
+            }
+        }
         hits.tabs.push((rect, tab.tab_id.clone()));
         first_visible.get_or_insert(index);
         last_visible = Some(index);
@@ -369,6 +394,36 @@ fn max_tab_scroll(widths: &[u16], available: u16) -> usize {
         start -= 1;
     }
     start
+}
+
+/// Status icon for a tab that hosts an agent; plain shell tabs show none.
+fn tab_status_icon(
+    tab: &ClientShellTab,
+    indicators: Option<crate::config::StatusIndicatorStyle>,
+) -> Option<&'static str> {
+    let indicators = indicators?;
+    (tab.agent_status != crate::api::schema::AgentStatus::Unknown)
+        .then(|| status_icon(tab.agent_status, indicators))
+}
+
+/// Effective tab color, highest signal first (same order as the sidebar):
+/// blocked red > finished-unseen teal > the user's pick.
+fn tab_color(
+    tab: &ClientShellTab,
+    live: bool,
+    blocked_dim: bool,
+    palette: &Palette,
+) -> Option<ratatui::style::Color> {
+    use crate::api::schema::AgentStatus;
+    match tab.agent_status {
+        AgentStatus::Blocked if live && blocked_dim => Some(crate::app::state::ATTENTION_RED_DIM),
+        AgentStatus::Blocked if live => Some(crate::app::state::ATTENTION_RED),
+        AgentStatus::Done if live => Some(palette.teal),
+        _ => tab
+            .color
+            .as_deref()
+            .and_then(crate::app::state::workspace_swatch_color),
+    }
 }
 
 fn tab_label(tab: &ClientShellTab) -> String {

@@ -1259,7 +1259,11 @@ fn render_workspace_color_overlay(
         i.x,
         i.y,
         i.width,
-        "workspace color",
+        if v.tab_id.is_some() {
+            "tab color"
+        } else {
+            "workspace color"
+        },
         Style::default()
             .fg(p.text)
             .bg(p.panel_bg)
@@ -1313,10 +1317,11 @@ fn render_workspace_color_overlay(
         auto.x + 2,
         auto.y,
         auto.width.saturating_sub(2),
-        if current.is_none() {
-            " auto (current)"
-        } else {
-            " auto (clear pick)"
+        match (v.tab_id.is_some(), current.is_none()) {
+            (false, true) => " auto (current)",
+            (false, false) => " auto (clear pick)",
+            (true, true) => " none (current)",
+            (true, false) => " none (clear color)",
         },
         auto_style,
     );

@@ -126,6 +126,7 @@ pub(super) fn snapshot_with_completions(
                 number: tab.number,
                 label: tab.label,
                 custom_label: !state.is_auto_named(),
+                color: state.color.clone(),
                 zoomed: state.zoomed,
                 agent_status: tab.agent_status,
             }

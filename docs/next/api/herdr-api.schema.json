@@ -4346,6 +4346,24 @@
           ],
           "type": "object"
         },
+        "TabSetColorParams": {
+          "properties": {
+            "color": {
+              "description": "Swatch key (red, maroon, peach, yellow, green, teal, sky, blue,\nsapphire, mauve, pink, lavender). Omit or null to clear the color.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tab_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tab_id"
+          ],
+          "type": "object"
+        },
         "TabTarget": {
           "properties": {
             "tab_id": {
@@ -5235,6 +5253,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/TabRenameParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "tab.set_color",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/TabSetColorParams"
             }
           },
           "required": [

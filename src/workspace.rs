@@ -1185,6 +1185,7 @@ impl Workspace {
         let mut panes = HashMap::new();
         panes.insert(root_id, PaneState::new(terminal_id));
         let tab = Tab {
+            color: None,
             custom_name: None,
             number: 1,
             root_pane: root_id,
@@ -1242,6 +1243,7 @@ impl Workspace {
         let mut panes = HashMap::new();
         panes.insert(root_id, PaneState::new(TerminalId::alloc()));
         let tab = Tab {
+            color: None,
             custom_name: name.map(str::to_string),
             number: self.next_public_tab_number,
             root_pane: root_id,
